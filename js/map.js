@@ -9,6 +9,7 @@ const MapManager = {
     swathWidth: 50, // Default width in feet
     isInitialized: false,
     priorSwaths: [], // Store prior session swaths
+    overlayLayer: null,
 
     init() {
         if (this.isInitialized && this.map) {
@@ -27,6 +28,21 @@ const MapManager = {
             attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
         }).addTo(this.map);
 
+        // Add semi-transparent white overlay to lighten the imagery
+        this.overlayLayer = L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', {
+            opacity: 0.25
+        }).addTo(this.map);
+
+        // Alternative: Add a white rectangle overlay
+        // This creates a lightening effect on the satellite imagery
+        const whiteOverlay = L.rectangle([[-90, -180], [90, 180]], {
+            color: 'white',
+            weight: 0,
+            fillColor: 'white',
+            fillOpacity: 0.2,
+            interactive: false
+        }).addTo(this.map);
+
         this.isInitialized = true;
     },
 
@@ -34,7 +50,7 @@ const MapManager = {
         this.swathWidth = widthFeet || 50;
     },
 
-    createTractorIcon(color = 'red') {
+    createTractorIcon(color = 'green') {
         const emoji = '🚜';
         const bgColor = this.getTractorBgColor(color);
 
@@ -54,7 +70,7 @@ const MapManager = {
             yellow: '#f9a825',
             orange: '#e65100'
         };
-        return colors[color] || colors.red;
+        return colors[color] || colors.green;
     },
 
     getManureColor(color) {
@@ -67,7 +83,7 @@ const MapManager = {
         return colors[color] || colors.brown;
     },
 
-    setTractorPosition(lat, lng, tractorColor = 'red') {
+    setTractorPosition(lat, lng, tractorColor = 'green') {
         if (!this.map) {
             console.error('Map not initialized');
             return;
@@ -125,13 +141,6 @@ const MapManager = {
         return feet * 0.3048;
     },
 
-    // Calculate offset point perpendicular to direction of travel
-    calculateOffsetPoint(lat, lng, bearing, distanceMeters, direction) {
-        // direction: 1 for left, -1 for right
-        const perpendicularBearing = bearing + (direction * 90);
-        return this.destinationPoint(lat, lng, perpendicularBearing, distanceMeters);
-    },
-
     // Calculate destination point given start, bearing, and distance
     destinationPoint(lat, lng, bearing, distanceMeters) {
         const R = 6371000; // Earth's radius in meters
@@ -170,43 +179,154 @@ const MapManager = {
         return (bearing + 360) % 360;
     },
 
-    // Build swath polygon from path coordinates
-    buildSwathPolygon() {
-        if (this.pathCoordinates.length < 2) return [];
+    // Generate points along a circular arc
+    generateArcPoints(centerLat, centerLng, radius, startAngle, endAngle, numPoints = 8) {
+        const points = [];
 
-        const halfWidthMeters = this.feetToMeters(this.swathWidth) / 2;
+        // Normalize angles
+        let start = startAngle;
+        let end = endAngle;
+
+        // Handle angle wrapping
+        if (end < start) {
+            end += 360;
+        }
+
+        const angleStep = (end - start) / numPoints;
+
+        for (let i = 0; i <= numPoints; i++) {
+            const angle = start + (i * angleStep);
+            const point = this.destinationPoint(centerLat, centerLng, angle, radius);
+            points.push([point.lat, point.lng]);
+        }
+
+        return points;
+    },
+
+    // Build a proper buffered polygon (like ArcGIS buffer)
+    buildBufferedPolygon() {
+        if (this.pathCoordinates.length < 1) return [];
+
+        const bufferRadius = this.feetToMeters(this.swathWidth) / 2;
+
+        // For a single point, return a circle
+        if (this.pathCoordinates.length === 1) {
+            const center = this.pathCoordinates[0];
+            const circlePoints = [];
+            for (let angle = 0; angle < 360; angle += 15) {
+                const pt = this.destinationPoint(center[0], center[1], angle, bufferRadius);
+                circlePoints.push([pt.lat, pt.lng]);
+            }
+            return circlePoints;
+        }
+
+        // For multiple points, create a proper buffer with rounded ends and joins
         const leftSide = [];
         const rightSide = [];
 
         for (let i = 0; i < this.pathCoordinates.length; i++) {
             const current = this.pathCoordinates[i];
-            let bearing;
 
             if (i === 0) {
-                // First point - use bearing to next point
+                // First point - add a semicircle cap at the start
                 const next = this.pathCoordinates[i + 1];
-                bearing = this.calculateBearing(current[0], current[1], next[0], next[1]);
+                const bearing = this.calculateBearing(current[0], current[1], next[0], next[1]);
+
+                // Generate semicircle from right side to left side (going backwards)
+                const capPoints = this.generateArcPoints(
+                    current[0], current[1],
+                    bufferRadius,
+                    bearing + 90,
+                    bearing + 270,
+                    8
+                );
+                leftSide.push(...capPoints);
+
             } else if (i === this.pathCoordinates.length - 1) {
-                // Last point - use bearing from previous point
+                // Last point - add perpendicular points and end cap
                 const prev = this.pathCoordinates[i - 1];
-                bearing = this.calculateBearing(prev[0], prev[1], current[0], current[1]);
+                const bearing = this.calculateBearing(prev[0], prev[1], current[0], current[1]);
+
+                // Add left perpendicular point
+                const leftPt = this.destinationPoint(current[0], current[1], bearing - 90, bufferRadius);
+                leftSide.push([leftPt.lat, leftPt.lng]);
+
+                // Generate semicircle cap at the end (from left to right)
+                const capPoints = this.generateArcPoints(
+                    current[0], current[1],
+                    bufferRadius,
+                    bearing - 90,
+                    bearing + 90,
+                    8
+                );
+                // Add cap points to right side (will be reversed later)
+                rightSide.push(...capPoints.reverse());
+
             } else {
-                // Middle point - average bearings
+                // Middle points - calculate proper miter or rounded join
                 const prev = this.pathCoordinates[i - 1];
                 const next = this.pathCoordinates[i + 1];
+
                 const bearingIn = this.calculateBearing(prev[0], prev[1], current[0], current[1]);
                 const bearingOut = this.calculateBearing(current[0], current[1], next[0], next[1]);
-                bearing = (bearingIn + bearingOut) / 2;
+
+                // Calculate the turn angle
+                let turnAngle = bearingOut - bearingIn;
+                if (turnAngle > 180) turnAngle -= 360;
+                if (turnAngle < -180) turnAngle += 360;
+
+                // For the left side
+                const leftIn = (bearingIn - 90 + 360) % 360;
+                const leftOut = (bearingOut - 90 + 360) % 360;
+
+                // For the right side
+                const rightIn = (bearingIn + 90) % 360;
+                const rightOut = (bearingOut + 90) % 360;
+
+                if (Math.abs(turnAngle) < 5) {
+                    // Nearly straight - just add single points
+                    const leftPt = this.destinationPoint(current[0], current[1], leftIn, bufferRadius);
+                    const rightPt = this.destinationPoint(current[0], current[1], rightIn, bufferRadius);
+                    leftSide.push([leftPt.lat, leftPt.lng]);
+                    rightSide.push([rightPt.lat, rightPt.lng]);
+                } else if (turnAngle > 0) {
+                    // Turning right - left side needs arc, right side gets single point
+                    const arcPoints = this.generateArcPoints(
+                        current[0], current[1],
+                        bufferRadius,
+                        leftIn,
+                        leftOut,
+                        Math.max(3, Math.ceil(Math.abs(turnAngle) / 20))
+                    );
+                    leftSide.push(...arcPoints);
+
+                    // Right side - single point at the inner corner
+                    const rightPt = this.destinationPoint(current[0], current[1], (rightIn + rightOut) / 2, bufferRadius);
+                    rightSide.push([rightPt.lat, rightPt.lng]);
+                } else {
+                    // Turning left - right side needs arc, left side gets single point
+                    const leftPt = this.destinationPoint(current[0], current[1], (leftIn + leftOut) / 2, bufferRadius);
+                    leftSide.push([leftPt.lat, leftPt.lng]);
+
+                    // Right side needs arc
+                    let arcStart = rightIn;
+                    let arcEnd = rightOut;
+                    if (arcEnd > arcStart) {
+                        arcStart += 360;
+                    }
+                    const arcPoints = this.generateArcPoints(
+                        current[0], current[1],
+                        bufferRadius,
+                        arcEnd,
+                        arcStart,
+                        Math.max(3, Math.ceil(Math.abs(turnAngle) / 20))
+                    );
+                    rightSide.push(...arcPoints.reverse());
+                }
             }
-
-            const leftPoint = this.calculateOffsetPoint(current[0], current[1], bearing, halfWidthMeters, 1);
-            const rightPoint = this.calculateOffsetPoint(current[0], current[1], bearing, halfWidthMeters, -1);
-
-            leftSide.push([leftPoint.lat, leftPoint.lng]);
-            rightSide.push([rightPoint.lat, rightPoint.lng]);
         }
 
-        // Combine to form closed polygon (left side forward, right side backward)
+        // Combine: left side forward, then right side backward
         return [...leftSide, ...rightSide.reverse()];
     },
 
@@ -220,9 +340,9 @@ const MapManager = {
         this.pathCoordinates.push(point);
         this.pathLine.addLatLng(point);
 
-        // Update swath polygon
-        if (this.pathCoordinates.length >= 2) {
-            const swathCoords = this.buildSwathPolygon();
+        // Update swath polygon with proper buffer
+        const swathCoords = this.buildBufferedPolygon();
+        if (swathCoords.length >= 3) {
             this.swathPolygon.setLatLngs(swathCoords);
         }
     },
@@ -257,8 +377,8 @@ const MapManager = {
         const originalCoords = this.pathCoordinates;
         this.pathCoordinates = tempCoords;
 
-        // Build swath for prior session (more transparent to distinguish from current)
-        const swathCoords = this.buildSwathPolygon();
+        // Build swath for prior session
+        const swathCoords = this.buildBufferedPolygon();
 
         // Create prior swath polygon (lighter opacity)
         const priorSwath = L.polygon(swathCoords, {
