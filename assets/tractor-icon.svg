@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#2d5a27"/>
+  <g transform="translate(56, 120)">
+    <!-- Tractor body -->
+    <rect x="100" y="80" width="200" height="100" rx="10" fill="#c41e3a"/>
+    <!-- Cabin -->
+    <rect x="200" y="20" width="100" height="80" rx="8" fill="#87CEEB"/>
+    <rect x="210" y="30" width="80" height="50" rx="4" fill="#B0E0E6"/>
+    <!-- Exhaust -->
+    <rect x="120" y="50" width="15" height="40" rx="3" fill="#333"/>
+    <!-- Front wheel -->
+    <circle cx="140" cy="220" r="50" fill="#333"/>
+    <circle cx="140" cy="220" r="30" fill="#666"/>
+    <circle cx="140" cy="220" r="10" fill="#999"/>
+    <!-- Back wheel -->
+    <circle cx="300" cy="200" r="80" fill="#333"/>
+    <circle cx="300" cy="200" r="55" fill="#666"/>
+    <circle cx="300" cy="200" r="20" fill="#999"/>
+    <!-- Hitch -->
+    <rect x="300" y="160" width="80" height="20" rx="5" fill="#8b4513"/>
+  </g>
+  <text x="256" y="450" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="white" text-anchor="middle">TeamAg</text>
+</svg>

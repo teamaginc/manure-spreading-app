@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2d5a27">
+    <meta name="description" content="Track manure spreading operations from your tractor cab">
+    <title>TeamAg Manure Spreading</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="assets/tractor-icon.svg">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen active">
+        <div class="screen-content">
+            <img src="assets/logo-dark.png" alt="TeamAg" class="login-logo">
+            <h2 class="app-subtitle">Manure Spreading Tracker</h2>
+
+            <form id="login-form" class="auth-form">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-large">Login</button>
+                <p class="auth-switch">
+                    New user? <a href="#" id="show-register">Create Account</a>
+                </p>
+            </form>
+
+            <form id="register-form" class="auth-form hidden">
+                <div class="form-group">
+                    <label for="register-email">Email</label>
+                    <input type="email" id="register-email" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="register-name">Name (optional)</label>
+                    <input type="text" id="register-name" autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="register-password">Password</label>
+                    <input type="password" id="register-password" required minlength="4" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label for="register-confirm">Confirm Password</label>
+                    <input type="password" id="register-confirm" required minlength="4" autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-large">Create Account</button>
+                <p class="auth-switch">
+                    Have an account? <a href="#" id="show-login">Login</a>
+                </p>
+            </form>
+
+            <div id="auth-error" class="error-message hidden"></div>
+        </div>
+    </div>
+
+    <!-- Main Menu Screen -->
+    <div id="menu-screen" class="screen">
+        <div class="screen-content">
+            <img src="assets/logo-dark.png" alt="TeamAg" class="menu-logo">
+            <h1 class="welcome-text">Welcome, <span id="user-name">Farmer</span>!</h1>
+
+            <div class="menu-buttons">
+                <button class="btn btn-menu btn-spread" data-screen="setup-screen">
+                    <span class="btn-icon">🌾</span>
+                    <span class="btn-text">Spread Manure</span>
+                </button>
+                <button class="btn btn-menu btn-load" id="load-prior-btn">
+                    <span class="btn-icon">📂</span>
+                    <span class="btn-text">Continue Prior Session</span>
+                </button>
+                <button class="btn btn-menu btn-export" data-screen="export-screen">
+                    <span class="btn-icon">📊</span>
+                    <span class="btn-text">Export Data</span>
+                </button>
+                <button class="btn btn-menu btn-settings" data-screen="settings-screen">
+                    <span class="btn-icon">⚙️</span>
+                    <span class="btn-text">App Settings</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spreading Setup Screen -->
+    <div id="setup-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="menu-screen">← Back</button>
+            <h2>Spreading Setup</h2>
+        </div>
+        <div class="screen-content">
+            <div class="form-row">
+                <div class="form-group form-group-half">
+                    <label for="target-rate">Target Rate (gal/ac)</label>
+                    <input type="number" id="target-rate" class="input-large" placeholder="e.g., 5000" min="0" step="100">
+                </div>
+                <div class="form-group form-group-half">
+                    <label for="spread-width">Width (ft)</label>
+                    <input type="number" id="spread-width" class="input-large" placeholder="e.g., 50" min="1" step="1" value="50">
+                </div>
+            </div>
+            <button id="start-spreading" class="btn btn-primary btn-xlarge btn-record">
+                Record Spread
+            </button>
+        </div>
+    </div>
+
+    <!-- Load Prior Session Screen -->
+    <div id="load-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="menu-screen">← Back</button>
+            <h2>Continue Prior Session</h2>
+        </div>
+        <div class="screen-content">
+            <p class="load-instructions">Select a previous spreading session to continue:</p>
+            <div id="prior-sessions-list" class="sessions-list">
+                <p class="no-sessions">No prior sessions available.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Spreading Screen (Map) -->
+    <div id="map-screen" class="screen">
+        <div id="map"></div>
+        <div class="map-overlay-top">
+            <img src="assets/logo-light.png" alt="TeamAg" class="map-logo">
+        </div>
+        <div class="map-controls">
+            <div class="status-bar">
+                <div class="gps-status" id="gps-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Waiting for GPS...</span>
+                </div>
+                <div class="speed-display" id="speed-display">
+                    <span class="speed-value">0.0</span>
+                    <span class="speed-unit">mph</span>
+                </div>
+            </div>
+            <button id="stop-spreading" class="btn btn-danger btn-xlarge">
+                Stop Spreading
+            </button>
+        </div>
+    </div>
+
+    <!-- Export Screen -->
+    <div id="export-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="menu-screen">← Back</button>
+            <h2>Export Data</h2>
+        </div>
+        <div class="screen-content">
+            <div class="form-group">
+                <label for="export-format">Export Format</label>
+                <select id="export-format" class="select-large">
+                    <option value="csv">CSV (Spreadsheet)</option>
+                    <option value="kmz">KMZ (Google Earth)</option>
+                    <option value="png">PNG (Map Image)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="include-weather" checked>
+                    Include Weather Data
+                </label>
+            </div>
+            <div class="export-buttons">
+                <button id="export-all" class="btn btn-primary btn-large">
+                    Export All Logs
+                </button>
+                <button id="export-today" class="btn btn-secondary btn-large">
+                    Export Today's Logs
+                </button>
+            </div>
+            <div class="logs-container">
+                <h3>Spreading Logs</h3>
+                <div id="logs-list" class="logs-list">
+                    <p class="no-logs">No spreading logs yet.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Screen -->
+    <div id="settings-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="menu-screen">← Back</button>
+            <h2>App Settings</h2>
+        </div>
+        <div class="screen-content">
+            <form id="settings-form">
+                <div class="form-group">
+                    <label for="settings-email">Email Address</label>
+                    <input type="email" id="settings-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="settings-name">Name (optional)</label>
+                    <input type="text" id="settings-name">
+                </div>
+                <div class="form-group">
+                    <label for="settings-new-password">New Password (leave blank to keep current)</label>
+                    <input type="password" id="settings-new-password" minlength="4">
+                </div>
+                <button type="submit" class="btn btn-primary btn-large">Save Settings</button>
+            </form>
+            <div id="settings-message" class="success-message hidden"></div>
+            <button id="logout-btn" class="btn btn-danger btn-large">Logout</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/weather.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/spreading.js"></script>
+    <script src="js/export.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
