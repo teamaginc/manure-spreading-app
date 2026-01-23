@@ -55,6 +55,12 @@ const Auth = {
         };
 
         this.saveUser(user);
+
+        // Track registration
+        if (typeof Tracking !== 'undefined') {
+            Tracking.trackRegistration(email);
+        }
+
         return { success: true, user: { email: user.email, name: user.name } };
     },
 
@@ -75,6 +81,11 @@ const Auth = {
 
         storedUser.isLoggedIn = true;
         this.saveUser(storedUser);
+
+        // Track login
+        if (typeof Tracking !== 'undefined') {
+            Tracking.trackLogin(email);
+        }
 
         return { success: true, user: { email: storedUser.email, name: storedUser.name } };
     },

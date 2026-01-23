@@ -4,12 +4,12 @@ const MapManager = {
     map: null,
     tractorMarker: null,
     pathLine: null,
-    swathPolygon: null,
+    swathCircles: [], // Array of circle overlays instead of single polygon
     pathCoordinates: [],
     swathWidth: 50, // Default width in feet
     isInitialized: false,
     priorSwaths: [], // Store prior session swaths
-    overlayLayer: null,
+    manureColor: '#5d3000', // Darker brown for better contrast
 
     init() {
         if (this.isInitialized && this.map) {
@@ -25,21 +25,15 @@ const MapManager = {
         // Add ESRI World Imagery satellite tiles
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            attribution: 'Tiles &copy; Esri'
         }).addTo(this.map);
 
-        // Add semi-transparent white overlay to lighten the imagery
-        this.overlayLayer = L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', {
-            opacity: 0.25
-        }).addTo(this.map);
-
-        // Alternative: Add a white rectangle overlay
-        // This creates a lightening effect on the satellite imagery
+        // Add white overlay to lighten the imagery (increased opacity for more contrast)
         const whiteOverlay = L.rectangle([[-90, -180], [90, 180]], {
             color: 'white',
             weight: 0,
             fillColor: 'white',
-            fillOpacity: 0.2,
+            fillOpacity: 0.3, // Increased from 0.2
             interactive: false
         }).addTo(this.map);
 
@@ -74,11 +68,12 @@ const MapManager = {
     },
 
     getManureColor(color) {
+        // Darker colors for better contrast on lightened satellite imagery
         const colors = {
-            brown: '#8b4513',
-            'dark-brown': '#5d3a1a',
-            black: '#2d2d2d',
-            green: '#4a7c23'
+            brown: '#5d3000',      // Darker brown
+            'dark-brown': '#3d2000', // Even darker
+            black: '#1a1a1a',
+            green: '#2d5016'       // Darker green
         };
         return colors[color] || colors.brown;
     },
@@ -104,31 +99,27 @@ const MapManager = {
         this.map.setView(position, this.map.getZoom());
     },
 
+    // Convert feet to meters
+    feetToMeters(feet) {
+        return feet * 0.3048;
+    },
+
     startPath(manureColor = 'brown', widthFeet = 50) {
         this.pathCoordinates = [];
         this.swathWidth = widthFeet;
-        const pathColor = this.getManureColor(manureColor);
+        this.manureColor = this.getManureColor(manureColor);
 
-        // Remove existing path and swath if any
+        // Clear existing swath circles
+        this.clearSwathCircles();
+
+        // Remove existing path line if any
         if (this.pathLine) {
             this.map.removeLayer(this.pathLine);
         }
-        if (this.swathPolygon) {
-            this.map.removeLayer(this.swathPolygon);
-        }
 
-        // Create swath polygon (50% transparent)
-        this.swathPolygon = L.polygon([], {
-            color: pathColor,
-            weight: 1,
-            opacity: 0.5,
-            fillColor: pathColor,
-            fillOpacity: 0.5
-        }).addTo(this.map);
-
-        // Create center line (solid)
+        // Create center line (solid, darker)
         this.pathLine = L.polyline([], {
-            color: pathColor,
+            color: this.manureColor,
             weight: 4,
             opacity: 1,
             lineCap: 'round',
@@ -136,9 +127,58 @@ const MapManager = {
         }).addTo(this.map);
     },
 
-    // Convert feet to meters
-    feetToMeters(feet) {
-        return feet * 0.3048;
+    clearSwathCircles() {
+        this.swathCircles.forEach(circle => {
+            if (this.map) {
+                this.map.removeLayer(circle);
+            }
+        });
+        this.swathCircles = [];
+    },
+
+    // Add a circle at a point for the swath
+    addSwathCircle(lat, lng) {
+        const radiusMeters = this.feetToMeters(this.swathWidth) / 2;
+
+        const circle = L.circle([lat, lng], {
+            radius: radiusMeters,
+            color: this.manureColor,
+            weight: 0,
+            fillColor: this.manureColor,
+            fillOpacity: 0.5,
+            interactive: false
+        }).addTo(this.map);
+
+        this.swathCircles.push(circle);
+    },
+
+    // Add rectangle between two points to fill gaps between circles
+    addSwathSegment(lat1, lng1, lat2, lng2) {
+        const radiusMeters = this.feetToMeters(this.swathWidth) / 2;
+
+        // Calculate bearing between points
+        const bearing = this.calculateBearing(lat1, lng1, lat2, lng2);
+
+        // Calculate the four corners of the rectangle
+        const p1Left = this.destinationPoint(lat1, lng1, bearing - 90, radiusMeters);
+        const p1Right = this.destinationPoint(lat1, lng1, bearing + 90, radiusMeters);
+        const p2Left = this.destinationPoint(lat2, lng2, bearing - 90, radiusMeters);
+        const p2Right = this.destinationPoint(lat2, lng2, bearing + 90, radiusMeters);
+
+        const polygon = L.polygon([
+            [p1Left.lat, p1Left.lng],
+            [p2Left.lat, p2Left.lng],
+            [p2Right.lat, p2Right.lng],
+            [p1Right.lat, p1Right.lng]
+        ], {
+            color: this.manureColor,
+            weight: 0,
+            fillColor: this.manureColor,
+            fillOpacity: 0.5,
+            interactive: false
+        }).addTo(this.map);
+
+        this.swathCircles.push(polygon); // Store in same array for cleanup
     },
 
     // Calculate destination point given start, bearing, and distance
@@ -179,157 +219,6 @@ const MapManager = {
         return (bearing + 360) % 360;
     },
 
-    // Generate points along a circular arc
-    generateArcPoints(centerLat, centerLng, radius, startAngle, endAngle, numPoints = 8) {
-        const points = [];
-
-        // Normalize angles
-        let start = startAngle;
-        let end = endAngle;
-
-        // Handle angle wrapping
-        if (end < start) {
-            end += 360;
-        }
-
-        const angleStep = (end - start) / numPoints;
-
-        for (let i = 0; i <= numPoints; i++) {
-            const angle = start + (i * angleStep);
-            const point = this.destinationPoint(centerLat, centerLng, angle, radius);
-            points.push([point.lat, point.lng]);
-        }
-
-        return points;
-    },
-
-    // Build a proper buffered polygon (like ArcGIS buffer)
-    buildBufferedPolygon() {
-        if (this.pathCoordinates.length < 1) return [];
-
-        const bufferRadius = this.feetToMeters(this.swathWidth) / 2;
-
-        // For a single point, return a circle
-        if (this.pathCoordinates.length === 1) {
-            const center = this.pathCoordinates[0];
-            const circlePoints = [];
-            for (let angle = 0; angle < 360; angle += 15) {
-                const pt = this.destinationPoint(center[0], center[1], angle, bufferRadius);
-                circlePoints.push([pt.lat, pt.lng]);
-            }
-            return circlePoints;
-        }
-
-        // For multiple points, create a proper buffer with rounded ends and joins
-        const leftSide = [];
-        const rightSide = [];
-
-        for (let i = 0; i < this.pathCoordinates.length; i++) {
-            const current = this.pathCoordinates[i];
-
-            if (i === 0) {
-                // First point - add a semicircle cap at the start
-                const next = this.pathCoordinates[i + 1];
-                const bearing = this.calculateBearing(current[0], current[1], next[0], next[1]);
-
-                // Generate semicircle from right side to left side (going backwards)
-                const capPoints = this.generateArcPoints(
-                    current[0], current[1],
-                    bufferRadius,
-                    bearing + 90,
-                    bearing + 270,
-                    8
-                );
-                leftSide.push(...capPoints);
-
-            } else if (i === this.pathCoordinates.length - 1) {
-                // Last point - add perpendicular points and end cap
-                const prev = this.pathCoordinates[i - 1];
-                const bearing = this.calculateBearing(prev[0], prev[1], current[0], current[1]);
-
-                // Add left perpendicular point
-                const leftPt = this.destinationPoint(current[0], current[1], bearing - 90, bufferRadius);
-                leftSide.push([leftPt.lat, leftPt.lng]);
-
-                // Generate semicircle cap at the end (from left to right)
-                const capPoints = this.generateArcPoints(
-                    current[0], current[1],
-                    bufferRadius,
-                    bearing - 90,
-                    bearing + 90,
-                    8
-                );
-                // Add cap points to right side (will be reversed later)
-                rightSide.push(...capPoints.reverse());
-
-            } else {
-                // Middle points - calculate proper miter or rounded join
-                const prev = this.pathCoordinates[i - 1];
-                const next = this.pathCoordinates[i + 1];
-
-                const bearingIn = this.calculateBearing(prev[0], prev[1], current[0], current[1]);
-                const bearingOut = this.calculateBearing(current[0], current[1], next[0], next[1]);
-
-                // Calculate the turn angle
-                let turnAngle = bearingOut - bearingIn;
-                if (turnAngle > 180) turnAngle -= 360;
-                if (turnAngle < -180) turnAngle += 360;
-
-                // For the left side
-                const leftIn = (bearingIn - 90 + 360) % 360;
-                const leftOut = (bearingOut - 90 + 360) % 360;
-
-                // For the right side
-                const rightIn = (bearingIn + 90) % 360;
-                const rightOut = (bearingOut + 90) % 360;
-
-                if (Math.abs(turnAngle) < 5) {
-                    // Nearly straight - just add single points
-                    const leftPt = this.destinationPoint(current[0], current[1], leftIn, bufferRadius);
-                    const rightPt = this.destinationPoint(current[0], current[1], rightIn, bufferRadius);
-                    leftSide.push([leftPt.lat, leftPt.lng]);
-                    rightSide.push([rightPt.lat, rightPt.lng]);
-                } else if (turnAngle > 0) {
-                    // Turning right - left side needs arc, right side gets single point
-                    const arcPoints = this.generateArcPoints(
-                        current[0], current[1],
-                        bufferRadius,
-                        leftIn,
-                        leftOut,
-                        Math.max(3, Math.ceil(Math.abs(turnAngle) / 20))
-                    );
-                    leftSide.push(...arcPoints);
-
-                    // Right side - single point at the inner corner
-                    const rightPt = this.destinationPoint(current[0], current[1], (rightIn + rightOut) / 2, bufferRadius);
-                    rightSide.push([rightPt.lat, rightPt.lng]);
-                } else {
-                    // Turning left - right side needs arc, left side gets single point
-                    const leftPt = this.destinationPoint(current[0], current[1], (leftIn + leftOut) / 2, bufferRadius);
-                    leftSide.push([leftPt.lat, leftPt.lng]);
-
-                    // Right side needs arc
-                    let arcStart = rightIn;
-                    let arcEnd = rightOut;
-                    if (arcEnd > arcStart) {
-                        arcStart += 360;
-                    }
-                    const arcPoints = this.generateArcPoints(
-                        current[0], current[1],
-                        bufferRadius,
-                        arcEnd,
-                        arcStart,
-                        Math.max(3, Math.ceil(Math.abs(turnAngle) / 20))
-                    );
-                    rightSide.push(...arcPoints.reverse());
-                }
-            }
-        }
-
-        // Combine: left side forward, then right side backward
-        return [...leftSide, ...rightSide.reverse()];
-    },
-
     addPathPoint(lat, lng) {
         if (!this.pathLine) {
             console.error('Path not started');
@@ -337,14 +226,18 @@ const MapManager = {
         }
 
         const point = [lat, lng];
+
+        // Add circle at this point
+        this.addSwathCircle(lat, lng);
+
+        // If we have a previous point, add a rectangle segment between them
+        if (this.pathCoordinates.length > 0) {
+            const prevPoint = this.pathCoordinates[this.pathCoordinates.length - 1];
+            this.addSwathSegment(prevPoint[0], prevPoint[1], lat, lng);
+        }
+
         this.pathCoordinates.push(point);
         this.pathLine.addLatLng(point);
-
-        // Update swath polygon with proper buffer
-        const swathCoords = this.buildBufferedPolygon();
-        if (swathCoords.length >= 3) {
-            this.swathPolygon.setLatLngs(swathCoords);
-        }
     },
 
     getPathCoordinates() {
@@ -366,42 +259,58 @@ const MapManager = {
         if (!log.path || log.path.length < 2) return;
 
         const pathColor = this.getManureColor(log.manureColor || 'brown');
-        const width = log.spreadWidth || 50;
+        const radiusMeters = this.feetToMeters(log.spreadWidth || 50) / 2;
 
-        // Temporarily set swath width for calculation
-        const originalWidth = this.swathWidth;
-        this.swathWidth = width;
+        // Draw circles and segments for prior session (lighter opacity)
+        for (let i = 0; i < log.path.length; i++) {
+            const point = log.path[i];
 
-        // Convert log path to pathCoordinates format for swath calculation
-        const tempCoords = log.path.map(p => [p.lat, p.lng]);
-        const originalCoords = this.pathCoordinates;
-        this.pathCoordinates = tempCoords;
+            // Add circle
+            const circle = L.circle([point.lat, point.lng], {
+                radius: radiusMeters,
+                color: pathColor,
+                weight: 0,
+                fillColor: pathColor,
+                fillOpacity: 0.3, // Lighter for prior sessions
+                interactive: false
+            }).addTo(this.map);
+            this.priorSwaths.push(circle);
 
-        // Build swath for prior session
-        const swathCoords = this.buildBufferedPolygon();
+            // Add segment between points
+            if (i > 0) {
+                const prevPoint = log.path[i - 1];
+                const bearing = this.calculateBearing(prevPoint.lat, prevPoint.lng, point.lat, point.lng);
 
-        // Create prior swath polygon (lighter opacity)
-        const priorSwath = L.polygon(swathCoords, {
-            color: pathColor,
-            weight: 1,
-            opacity: 0.3,
-            fillColor: pathColor,
-            fillOpacity: 0.3
-        }).addTo(this.map);
+                const p1Left = this.destinationPoint(prevPoint.lat, prevPoint.lng, bearing - 90, radiusMeters);
+                const p1Right = this.destinationPoint(prevPoint.lat, prevPoint.lng, bearing + 90, radiusMeters);
+                const p2Left = this.destinationPoint(point.lat, point.lng, bearing - 90, radiusMeters);
+                const p2Right = this.destinationPoint(point.lat, point.lng, bearing + 90, radiusMeters);
+
+                const polygon = L.polygon([
+                    [p1Left.lat, p1Left.lng],
+                    [p2Left.lat, p2Left.lng],
+                    [p2Right.lat, p2Right.lng],
+                    [p1Right.lat, p1Right.lng]
+                ], {
+                    color: pathColor,
+                    weight: 0,
+                    fillColor: pathColor,
+                    fillOpacity: 0.3,
+                    interactive: false
+                }).addTo(this.map);
+                this.priorSwaths.push(polygon);
+            }
+        }
 
         // Create prior center line (dashed to distinguish)
+        const tempCoords = log.path.map(p => [p.lat, p.lng]);
         const priorLine = L.polyline(tempCoords, {
             color: pathColor,
             weight: 2,
             opacity: 0.6,
             dashArray: '5, 10'
         }).addTo(this.map);
-
-        this.priorSwaths.push(priorSwath, priorLine);
-
-        // Restore original values
-        this.swathWidth = originalWidth;
-        this.pathCoordinates = originalCoords;
+        this.priorSwaths.push(priorLine);
 
         // Fit bounds to show prior session
         if (tempCoords.length > 0) {
@@ -423,10 +332,7 @@ const MapManager = {
             this.map.removeLayer(this.pathLine);
             this.pathLine = null;
         }
-        if (this.swathPolygon) {
-            this.map.removeLayer(this.swathPolygon);
-            this.swathPolygon = null;
-        }
+        this.clearSwathCircles();
         this.pathCoordinates = [];
     },
 
@@ -457,7 +363,6 @@ const MapManager = {
         }
     },
 
-    // Get current map state for PNG export
     getMapBounds() {
         if (!this.map) return null;
         return this.map.getBounds();

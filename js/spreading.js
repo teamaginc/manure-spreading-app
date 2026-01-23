@@ -66,6 +66,14 @@ const SpreadingTracker = {
                 }
             );
 
+            // Track spreading start
+            if (typeof Tracking !== 'undefined') {
+                Tracking.trackSpreadingStart({
+                    targetRate: this.targetRate,
+                    spreadWidth: this.spreadWidth
+                });
+            }
+
             return { success: true };
         } catch (error) {
             this.updateGpsStatus('error', 'Failed to start GPS');
@@ -222,6 +230,11 @@ const SpreadingTracker = {
         try {
             const savedLog = await StorageDB.saveLog(this.currentLog);
             console.log('Spreading log saved:', savedLog);
+
+            // Track spreading end
+            if (typeof Tracking !== 'undefined') {
+                Tracking.trackSpreadingEnd(this.currentLog);
+            }
 
             // Reset map
             MapManager.reset();
