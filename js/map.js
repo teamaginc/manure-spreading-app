@@ -377,5 +377,43 @@ const MapManager = {
     getMapZoom() {
         if (!this.map) return null;
         return this.map.getZoom();
+    },
+
+    fieldBoundaryLayers: [],
+
+    addFieldBoundaries(fields) {
+        this.clearFieldBoundaries();
+        if (!this.map || !fields) return;
+
+        fields.forEach(field => {
+            if (!field.geojson) return;
+            const layer = L.geoJSON(field.geojson, {
+                style: {
+                    color: '#DAA520',
+                    weight: 3,
+                    fillColor: '#DAA520',
+                    fillOpacity: 0.15,
+                    dashArray: '5,5'
+                },
+                onEachFeature: (feature, lyr) => {
+                    const props = feature.properties || {};
+                    const entries = Object.entries(props).filter(([, v]) => v != null && v !== '');
+                    if (entries.length > 0) {
+                        const html = entries.map(([k, v]) => `<b>${k}:</b> ${v}`).join('<br>');
+                        lyr.bindPopup(`<div style="max-height:200px;overflow:auto"><b>${field.name}</b><br>${html}</div>`);
+                    } else {
+                        lyr.bindPopup(`<b>${field.name}</b>`);
+                    }
+                }
+            }).addTo(this.map);
+            this.fieldBoundaryLayers.push(layer);
+        });
+    },
+
+    clearFieldBoundaries() {
+        this.fieldBoundaryLayers.forEach(layer => {
+            if (this.map) this.map.removeLayer(layer);
+        });
+        this.fieldBoundaryLayers = [];
     }
 };

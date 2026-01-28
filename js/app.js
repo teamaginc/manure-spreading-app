@@ -22,8 +22,25 @@ const App = {
         this.setupSettings();
         this.setupPriorSessions();
 
+        // Initialize admin panel
+        if (typeof AdminPanel !== 'undefined') {
+            AdminPanel.init();
+        }
+
+        // Menu logout button
+        const menuLogoutBtn = document.getElementById('menu-logout-btn');
+        if (menuLogoutBtn) {
+            menuLogoutBtn.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to logout?')) {
+                    const authHandler = window.FirebaseAuth || Auth;
+                    await authHandler.logout();
+                    this.showScreen('login-screen');
+                }
+            });
+        }
+
         // Listen for Firebase auth state changes
-        window.addEventListener('authStateChanged', (event) => {
+        window.addEventListener('authStateChanged', async (event) => {
             const user = event.detail.user;
             this.authInitialized = true;
 
@@ -33,11 +50,14 @@ const App = {
                     email: user.email,
                     name: user.displayName || ''
                 });
+                // Check admin role and show/hide admin button
+                await this.updateAdminVisibility();
                 if (this.currentScreen === 'login-screen') {
                     this.showScreen('menu-screen');
                 }
             } else {
                 console.log('User logged out');
+                this.hideAdminButton();
                 this.showScreen('login-screen');
             }
         });
@@ -394,6 +414,31 @@ const App = {
         if (nameElement) {
             nameElement.textContent = user.name || user.email.split('@')[0];
         }
+    },
+
+    async updateAdminVisibility() {
+        const btn = document.getElementById('admin-panel-btn');
+        if (!btn) return;
+
+        // Wait for FirebaseAdmin to be available (module load timing)
+        let attempts = 0;
+        while (!window.FirebaseAdmin && attempts < 20) {
+            await new Promise(r => setTimeout(r, 250));
+            attempts++;
+        }
+        if (!window.FirebaseAdmin) return;
+
+        try {
+            const isAdmin = await FirebaseAdmin.isAdmin();
+            btn.classList.toggle('hidden', !isAdmin);
+        } catch (e) {
+            btn.classList.add('hidden');
+        }
+    },
+
+    hideAdminButton() {
+        const btn = document.getElementById('admin-panel-btn');
+        if (btn) btn.classList.add('hidden');
     }
 };
 

@@ -44,6 +44,11 @@ const SpreadingTracker = {
         // Initialize map path with width
         MapManager.startPath(manureColor, this.spreadWidth);
 
+        // Load field boundaries if feature enabled
+        if (typeof FieldDisplay !== 'undefined') {
+            FieldDisplay.loadCurrentUserFields();
+        }
+
         // Update GPS status
         this.updateGpsStatus('waiting', 'Waiting for GPS...');
         this.updateSpeedDisplay(0);

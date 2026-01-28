@@ -86,6 +86,14 @@
                     <span class="btn-icon">⚙️</span>
                     <span class="btn-text">App Settings</span>
                 </button>
+                <button class="btn btn-menu btn-admin hidden" id="admin-panel-btn">
+                    <span class="btn-icon">🛡️</span>
+                    <span class="btn-text">Admin Panel</span>
+                </button>
+                <button class="btn btn-menu btn-logout" id="menu-logout-btn">
+                    <span class="btn-icon">🚪</span>
+                    <span class="btn-text">Logout</span>
+                </button>
             </div>
         </div>
     </div>
@@ -215,7 +223,124 @@
         </div>
     </div>
 
+    <!-- Admin Dashboard Screen -->
+    <div id="admin-dashboard-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="menu-screen">← Back</button>
+            <h2>Admin Panel</h2>
+        </div>
+        <div class="screen-content">
+            <div class="admin-stats">
+                <div class="stat-card"><div class="stat-value" id="stat-total-farmers">0</div><div class="stat-label">Farmers</div></div>
+                <div class="stat-card"><div class="stat-value" id="stat-total-admins">0</div><div class="stat-label">Admins</div></div>
+                <div class="stat-card"><div class="stat-value" id="stat-shapefiles-enabled">0</div><div class="stat-label">Shapefiles On</div></div>
+            </div>
+            <div class="admin-actions">
+                <button class="btn btn-primary btn-large" id="admin-manage-farmers">Manage Farmers</button>
+                <button class="btn btn-secondary btn-large" id="admin-feature-toggles">Feature Toggles</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Farmer List Screen -->
+    <div id="farmer-list-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>Farmer List</h2>
+        </div>
+        <div class="screen-content">
+            <input type="text" id="farmer-search" class="farmer-search-input" placeholder="Search farmers...">
+            <button class="btn btn-primary" id="create-farmer-btn" style="margin-bottom:12px;">Create Farmer</button>
+            <div id="farmer-list-container" class="farmer-list"></div>
+
+            <!-- Create Farmer Modal -->
+            <div id="create-farmer-modal" class="modal-overlay hidden">
+                <div class="modal-content">
+                    <h3>Create Farmer Account</h3>
+                    <form id="create-farmer-form">
+                        <div class="form-group">
+                            <label for="new-farmer-email">Email</label>
+                            <input type="email" id="new-farmer-email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-farmer-name">Name</label>
+                            <input type="text" id="new-farmer-name">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-farmer-password">Temporary Password</label>
+                            <input type="password" id="new-farmer-password" required minlength="6">
+                        </div>
+                        <div id="create-farmer-error" class="error-message hidden"></div>
+                        <div style="display:flex;gap:8px;margin-top:12px;">
+                            <button type="submit" class="btn btn-primary" style="flex:1;">Create</button>
+                            <button type="button" class="btn btn-danger" id="create-farmer-cancel" style="flex:1;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Farmer Detail Screen -->
+    <div id="farmer-detail-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="farmer-list-screen">← Back</button>
+            <h2>Farmer Detail</h2>
+        </div>
+        <div class="screen-content">
+            <div class="farmer-detail-header">
+                <h3 id="farmer-detail-name">—</h3>
+                <p id="farmer-detail-email">—</p>
+                <p>Role: <span id="farmer-detail-role">farmer</span></p>
+            </div>
+
+            <div class="toggle-section">
+                <label class="toggle-label">
+                    <span>Field Shapefiles Enabled</span>
+                    <input type="checkbox" id="farmer-shapefiles-toggle">
+                    <span class="toggle-switch"></span>
+                </label>
+            </div>
+
+            <div id="admin-role-controls" class="toggle-section hidden">
+                <label class="toggle-label">
+                    <span>Admin Role</span>
+                    <input type="checkbox" id="farmer-admin-toggle">
+                    <span class="toggle-switch"></span>
+                </label>
+            </div>
+
+            <div class="field-upload-section">
+                <h4>Field Boundaries</h4>
+                <input type="file" id="shapefile-input" accept=".zip,.geojson,.json" class="hidden">
+                <button class="btn btn-primary" id="upload-shapefile-btn">Upload Shapefile / GeoJSON</button>
+                <div id="farmer-fields-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No fields uploaded.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feature Toggles Screen -->
+    <div id="feature-toggles-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>Feature Toggles</h2>
+        </div>
+        <div class="screen-content">
+            <div class="toggle-section">
+                <label class="toggle-label">
+                    <span>Farmer Field Shapefiles (Global)</span>
+                    <input type="checkbox" id="global-shapefiles-toggle">
+                    <span class="toggle-switch"></span>
+                </label>
+                <p class="toggle-description">When enabled globally, farmers with individual toggle on will see field boundaries on their map.</p>
+            </div>
+        </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/tracking.js"></script>
@@ -223,6 +348,9 @@
     <script src="js/map.js"></script>
     <script src="js/spreading.js"></script>
     <script src="js/export.js"></script>
+    <script src="js/shapefile-handler.js"></script>
+    <script src="js/field-display.js"></script>
+    <script src="js/admin.js"></script>
     <script type="module" src="js/firebase-config.js"></script>
     <script src="js/app.js"></script>
 </body>

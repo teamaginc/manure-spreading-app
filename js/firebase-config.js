@@ -1,7 +1,7 @@
 // Firebase Configuration and Initialization
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, orderBy, addDoc } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -53,9 +53,12 @@ const FirebaseAuth = {
             }
 
             // Create user document in Firestore
+            const role = email.toLowerCase() === 'erics@teamaginc.com' ? 'superadmin' : 'farmer';
             await setDoc(doc(db, "users", userCredential.user.uid), {
                 email: email,
                 name: name,
+                role: role,
+                features: { fieldShapefiles: false },
                 createdAt: new Date().toISOString()
             });
 
@@ -249,15 +252,167 @@ const FirebaseDB = {
     }
 };
 
+// Admin functions
+const FirebaseAdmin = {
+    async getAllUsers() {
+        try {
+            const snapshot = await getDocs(collection(db, "users"));
+            const users = [];
+            snapshot.forEach(d => users.push({ uid: d.id, ...d.data() }));
+            return users;
+        } catch (e) {
+            console.error('getAllUsers error:', e);
+            return [];
+        }
+    },
+
+    async getUserDoc(userId) {
+        try {
+            const snap = await getDoc(doc(db, "users", userId));
+            return snap.exists() ? { uid: snap.id, ...snap.data() } : null;
+        } catch (e) {
+            console.error('getUserDoc error:', e);
+            return null;
+        }
+    },
+
+    async createFarmerAccount(email, password, name) {
+        // Save current admin credentials to re-auth after
+        const adminUser = auth.currentUser;
+        const adminEmail = adminUser.email;
+
+        try {
+            const cred = await createUserWithEmailAndPassword(auth, email, password);
+            if (name) await updateProfile(cred.user, { displayName: name });
+
+            await setDoc(doc(db, "users", cred.user.uid), {
+                email: email,
+                name: name || '',
+                role: 'farmer',
+                features: { fieldShapefiles: false },
+                createdAt: new Date().toISOString()
+            });
+
+            // Firebase signs in as new user; sign out and re-auth admin
+            await signOut(auth);
+            // We can't re-auth without the admin password, so prompt
+            const adminPassword = prompt('Creating the farmer account signed you out (Firebase limitation). Enter your admin password to re-authenticate:');
+            if (adminPassword) {
+                await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+            }
+        } catch (e) {
+            // Try to re-authenticate admin if something failed
+            console.error('createFarmerAccount error:', e);
+            throw e;
+        }
+    },
+
+    async updateUserRole(userId, role) {
+        await setDoc(doc(db, "users", userId), { role }, { merge: true });
+    },
+
+    async updateUserFeatures(userId, features) {
+        await setDoc(doc(db, "users", userId), { features }, { merge: true });
+    },
+
+    async saveFieldData(userId, fieldData) {
+        const fieldId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+        const data = {
+            id: fieldId,
+            name: fieldData.name,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: auth.currentUser ? auth.currentUser.uid : 'unknown',
+            geojson: fieldData.geojson,
+            metadata: fieldData.metadata || {}
+        };
+        await setDoc(doc(db, "users", userId, "fields", fieldId), data);
+        return data;
+    },
+
+    async getUserFields(userId) {
+        try {
+            const snapshot = await getDocs(collection(db, "users", userId, "fields"));
+            const fields = [];
+            snapshot.forEach(d => fields.push(d.data()));
+            return fields;
+        } catch (e) {
+            console.error('getUserFields error:', e);
+            return [];
+        }
+    },
+
+    async deleteField(userId, fieldId) {
+        await deleteDoc(doc(db, "users", userId, "fields", fieldId));
+    },
+
+    async getGlobalFeatures() {
+        try {
+            const snap = await getDoc(doc(db, "config", "features"));
+            return snap.exists() ? snap.data() : {};
+        } catch (e) {
+            console.error('getGlobalFeatures error:', e);
+            return {};
+        }
+    },
+
+    async updateGlobalFeatures(data) {
+        await setDoc(doc(db, "config", "features"), data, { merge: true });
+    },
+
+    async isAdmin() {
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) return false;
+        const userDoc = await this.getUserDoc(user.uid);
+        return userDoc && (userDoc.role === 'admin' || userDoc.role === 'superadmin');
+    }
+};
+
 // Export for use in other modules
 window.FirebaseAuth = FirebaseAuth;
 window.FirebaseDB = FirebaseDB;
+window.FirebaseAdmin = FirebaseAdmin;
 
 // Initialize auth listener
-FirebaseAuth.init((user) => {
+FirebaseAuth.init(async (user) => {
     console.log('Auth state changed:', user ? user.email : 'logged out');
+
+    // Ensure existing users have role/features fields, and auto-assign superadmin
+    if (user) {
+        try {
+            const userDocRef = doc(db, "users", user.uid);
+            const snap = await getDoc(userDocRef);
+            if (snap.exists()) {
+                const data = snap.data();
+                const updates = {};
+                if (!data.role) {
+                    updates.role = user.email.toLowerCase() === 'erics@teamaginc.com' ? 'superadmin' : 'farmer';
+                }
+                if (!data.features) {
+                    updates.features = { fieldShapefiles: false };
+                }
+                if (Object.keys(updates).length > 0) {
+                    await setDoc(userDocRef, updates, { merge: true });
+                    console.log('Backfilled user doc fields:', updates);
+                }
+            } else {
+                // No user doc at all — create one
+                const role = user.email.toLowerCase() === 'erics@teamaginc.com' ? 'superadmin' : 'farmer';
+                await setDoc(userDocRef, {
+                    email: user.email,
+                    name: user.displayName || '',
+                    role: role,
+                    features: { fieldShapefiles: false },
+                    createdAt: new Date().toISOString()
+                });
+                console.log('Created missing user doc with role:', role);
+            }
+        } catch (e) {
+            console.error('Error backfilling user doc:', e);
+        }
+    }
+
     // Dispatch custom event for app.js to handle
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { user } }));
 });
 
-export { FirebaseAuth, FirebaseDB };
+export { FirebaseAuth, FirebaseDB, FirebaseAdmin };
