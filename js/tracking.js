@@ -2,8 +2,8 @@
 // This sends anonymous usage data to a Google Sheet for monitoring
 
 const Tracking = {
-    // Google Apps Script Web App URL - you'll set this up
-    WEBHOOK_URL: '', // Will be set after Google Sheet setup
+    // Google Apps Script Web App URL
+    WEBHOOK_URL: 'https://script.google.com/macros/s/AKfycbyKIAfkk14Cn12iYXeNQy72AU_RMv0bQSFlm7KRT3bPE35ulwjL7NCTdzwX4oxmthCa/exec',
 
     // Check if tracking is configured
     isConfigured() {
