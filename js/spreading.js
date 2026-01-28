@@ -226,9 +226,10 @@ const SpreadingTracker = {
         // Finalize the log
         this.currentLog.endTime = new Date().toISOString();
 
-        // Save to database
+        // Save to database (use Firebase if available, fallback to local)
         try {
-            const savedLog = await StorageDB.saveLog(this.currentLog);
+            const dbHandler = window.FirebaseDB || StorageDB;
+            const savedLog = await dbHandler.saveLog(this.currentLog);
             console.log('Spreading log saved:', savedLog);
 
             // Track spreading end

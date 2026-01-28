@@ -57,7 +57,9 @@ const ExportManager = {
         if (!container) return;
 
         try {
-            const logs = await StorageDB.getAllLogs();
+            // Use Firebase DB if available, fallback to local StorageDB
+            const dbHandler = window.FirebaseDB || StorageDB;
+            const logs = await dbHandler.getAllLogs();
 
             if (logs.length === 0) {
                 container.innerHTML = '<p class="no-logs">No spreading logs yet.</p>';
@@ -749,7 +751,9 @@ const ExportManager = {
 
     async exportAllLogs() {
         try {
-            const logs = await StorageDB.getAllLogs();
+            // Use Firebase DB if available, fallback to local StorageDB
+            const dbHandler = window.FirebaseDB || StorageDB;
+            const logs = await dbHandler.getAllLogs();
 
             if (logs.length === 0) {
                 alert('No logs to export.');
@@ -774,7 +778,9 @@ const ExportManager = {
 
     async exportTodaysLogs() {
         try {
-            const logs = await StorageDB.getTodaysLogs();
+            // Use Firebase DB if available, fallback to local StorageDB
+            const dbHandler = window.FirebaseDB || StorageDB;
+            const logs = await dbHandler.getTodaysLogs();
 
             if (logs.length === 0) {
                 alert('No logs from today to export.');

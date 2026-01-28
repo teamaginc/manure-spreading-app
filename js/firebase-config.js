@@ -1,0 +1,263 @@
+// Firebase Configuration and Initialization
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+    apiKey: "AIzaSyBezCZGxdeqdnLbcsGO8TOujHhFL6G2omQ",
+    authDomain: "teamag-manure-spreading.firebaseapp.com",
+    projectId: "teamag-manure-spreading",
+    storageBucket: "teamag-manure-spreading.firebasestorage.app",
+    messagingSenderId: "1035219208993",
+    appId: "1:1035219208993:web:404e7cba69561796558c60"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Auth functions
+const FirebaseAuth = {
+    currentUser: null,
+
+    // Listen for auth state changes
+    init(callback) {
+        onAuthStateChanged(auth, (user) => {
+            this.currentUser = user;
+            if (callback) callback(user);
+        });
+    },
+
+    isLoggedIn() {
+        return this.currentUser !== null;
+    },
+
+    getCurrentUser() {
+        if (!this.currentUser) return null;
+        return {
+            uid: this.currentUser.uid,
+            email: this.currentUser.email,
+            name: this.currentUser.displayName || ''
+        };
+    },
+
+    async register(email, password, name = '') {
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+
+            // Update display name if provided
+            if (name) {
+                await updateProfile(userCredential.user, { displayName: name });
+            }
+
+            // Create user document in Firestore
+            await setDoc(doc(db, "users", userCredential.user.uid), {
+                email: email,
+                name: name,
+                createdAt: new Date().toISOString()
+            });
+
+            // Track registration
+            if (typeof Tracking !== 'undefined') {
+                Tracking.trackRegistration(email);
+            }
+
+            return {
+                success: true,
+                user: {
+                    uid: userCredential.user.uid,
+                    email: email,
+                    name: name
+                }
+            };
+        } catch (error) {
+            console.error('Registration error:', error);
+            let message = 'Registration failed.';
+            if (error.code === 'auth/email-already-in-use') {
+                message = 'An account with this email already exists.';
+            } else if (error.code === 'auth/weak-password') {
+                message = 'Password should be at least 6 characters.';
+            } else if (error.code === 'auth/invalid-email') {
+                message = 'Invalid email address.';
+            }
+            return { success: false, error: message };
+        }
+    },
+
+    async login(email, password) {
+        try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+            // Track login
+            if (typeof Tracking !== 'undefined') {
+                Tracking.trackLogin(email);
+            }
+
+            return {
+                success: true,
+                user: {
+                    uid: userCredential.user.uid,
+                    email: userCredential.user.email,
+                    name: userCredential.user.displayName || ''
+                }
+            };
+        } catch (error) {
+            console.error('Login error:', error);
+            let message = 'Invalid email or password.';
+            if (error.code === 'auth/user-not-found') {
+                message = 'No account found with this email.';
+            } else if (error.code === 'auth/wrong-password') {
+                message = 'Invalid email or password.';
+            }
+            return { success: false, error: message };
+        }
+    },
+
+    async logout() {
+        try {
+            await signOut(auth);
+            return { success: true };
+        } catch (error) {
+            console.error('Logout error:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
+    async updateProfile(name) {
+        try {
+            if (this.currentUser) {
+                await updateProfile(this.currentUser, { displayName: name });
+
+                // Update Firestore document
+                await setDoc(doc(db, "users", this.currentUser.uid), {
+                    name: name
+                }, { merge: true });
+            }
+            return { success: true };
+        } catch (error) {
+            console.error('Update profile error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+};
+
+// Firestore database functions
+const FirebaseDB = {
+    generateId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    },
+
+    async saveLog(log) {
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) {
+            throw new Error('User not logged in');
+        }
+
+        const logId = log.id || this.generateId();
+        const logWithMeta = {
+            ...log,
+            id: logId,
+            userId: user.uid,
+            date: new Date(log.timestamp).toISOString().split('T')[0],
+            updatedAt: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, "users", user.uid, "logs", logId), logWithMeta);
+        console.log('Log saved to Firestore:', logId);
+        return logWithMeta;
+    },
+
+    async getAllLogs() {
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) {
+            return [];
+        }
+
+        try {
+            const logsRef = collection(db, "users", user.uid, "logs");
+            const q = query(logsRef, orderBy("timestamp", "desc"));
+            const snapshot = await getDocs(q);
+
+            const logs = [];
+            snapshot.forEach((doc) => {
+                logs.push(doc.data());
+            });
+            return logs;
+        } catch (error) {
+            console.error('Error getting logs:', error);
+            return [];
+        }
+    },
+
+    async getLogsByDate(date) {
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) {
+            return [];
+        }
+
+        try {
+            const logsRef = collection(db, "users", user.uid, "logs");
+            const q = query(logsRef, where("date", "==", date), orderBy("timestamp", "desc"));
+            const snapshot = await getDocs(q);
+
+            const logs = [];
+            snapshot.forEach((doc) => {
+                logs.push(doc.data());
+            });
+            return logs;
+        } catch (error) {
+            console.error('Error getting logs by date:', error);
+            return [];
+        }
+    },
+
+    async getTodaysLogs() {
+        const today = new Date().toISOString().split('T')[0];
+        return this.getLogsByDate(today);
+    },
+
+    async getLogById(id) {
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) {
+            return null;
+        }
+
+        try {
+            const docRef = doc(db, "users", user.uid, "logs", id);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                return docSnap.data();
+            }
+            return null;
+        } catch (error) {
+            console.error('Error getting log by id:', error);
+            return null;
+        }
+    },
+
+    async deleteLog(id) {
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) {
+            throw new Error('User not logged in');
+        }
+
+        await deleteDoc(doc(db, "users", user.uid, "logs", id));
+        console.log('Log deleted:', id);
+    }
+};
+
+// Export for use in other modules
+window.FirebaseAuth = FirebaseAuth;
+window.FirebaseDB = FirebaseDB;
+
+// Initialize auth listener
+FirebaseAuth.init((user) => {
+    console.log('Auth state changed:', user ? user.email : 'logged out');
+    // Dispatch custom event for app.js to handle
+    window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { user } }));
+});
+
+export { FirebaseAuth, FirebaseDB };

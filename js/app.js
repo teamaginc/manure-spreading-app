@@ -3,14 +3,15 @@
 const App = {
     currentScreen: 'login-screen',
     selectedPriorSession: null,
+    authInitialized: false,
 
     async init() {
-        // Initialize IndexedDB
+        // Initialize IndexedDB as fallback
         try {
             await StorageDB.init();
-            console.log('Storage initialized');
+            console.log('Local storage initialized');
         } catch (error) {
-            console.error('Failed to initialize storage:', error);
+            console.error('Failed to initialize local storage:', error);
         }
 
         // Set up event listeners
@@ -21,14 +22,28 @@ const App = {
         this.setupSettings();
         this.setupPriorSessions();
 
-        // Check if user is already logged in
-        if (Auth.isLoggedIn()) {
-            const user = Auth.getCurrentUser();
-            this.updateUserDisplay(user);
-            this.showScreen('menu-screen');
-        } else {
-            this.showScreen('login-screen');
-        }
+        // Listen for Firebase auth state changes
+        window.addEventListener('authStateChanged', (event) => {
+            const user = event.detail.user;
+            this.authInitialized = true;
+
+            if (user) {
+                console.log('User logged in:', user.email);
+                this.updateUserDisplay({
+                    email: user.email,
+                    name: user.displayName || ''
+                });
+                if (this.currentScreen === 'login-screen') {
+                    this.showScreen('menu-screen');
+                }
+            } else {
+                console.log('User logged out');
+                this.showScreen('login-screen');
+            }
+        });
+
+        // Show loading state initially, Firebase will trigger auth state change
+        this.showScreen('login-screen');
 
         // Register service worker
         this.registerServiceWorker();
@@ -116,12 +131,14 @@ const App = {
         });
 
         // Login form submission
-        loginForm.addEventListener('submit', (e) => {
+        loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-password').value;
 
-            const result = Auth.login(email, password);
+            // Use Firebase Auth if available, fallback to local Auth
+            const authHandler = window.FirebaseAuth || Auth;
+            const result = await authHandler.login(email, password);
 
             if (result.success) {
                 authError.classList.add('hidden');
@@ -135,7 +152,7 @@ const App = {
         });
 
         // Register form submission
-        registerForm.addEventListener('submit', (e) => {
+        registerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('register-email').value;
             const name = document.getElementById('register-name').value;
@@ -148,7 +165,9 @@ const App = {
                 return;
             }
 
-            const result = Auth.register(email, password, name);
+            // Use Firebase Auth if available, fallback to local Auth
+            const authHandler = window.FirebaseAuth || Auth;
+            const result = await authHandler.register(email, password, name);
 
             if (result.success) {
                 authError.classList.add('hidden');
@@ -224,7 +243,9 @@ const App = {
         if (!container) return;
 
         try {
-            const logs = await StorageDB.getAllLogs();
+            // Use Firebase DB if available, fallback to local StorageDB
+            const dbHandler = window.FirebaseDB || StorageDB;
+            const logs = await dbHandler.getAllLogs();
 
             if (logs.length === 0) {
                 container.innerHTML = '<p class="no-sessions">No prior sessions available.</p>';
@@ -273,7 +294,9 @@ const App = {
 
     async selectPriorSession(logId) {
         try {
-            const log = await StorageDB.getLogById(logId);
+            // Use Firebase DB if available, fallback to local StorageDB
+            const dbHandler = window.FirebaseDB || StorageDB;
+            const log = await dbHandler.getLogById(logId);
 
             if (!log) {
                 alert('Session not found.');
@@ -319,13 +342,17 @@ const App = {
         const logoutBtn = document.getElementById('logout-btn');
         const settingsMessage = document.getElementById('settings-message');
 
-        settingsForm.addEventListener('submit', (e) => {
+        settingsForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('settings-email').value;
             const name = document.getElementById('settings-name').value;
             const newPassword = document.getElementById('settings-new-password').value;
 
-            const result = Auth.updateProfile(email, name, newPassword || null);
+            // Use Firebase Auth if available, fallback to local Auth
+            const authHandler = window.FirebaseAuth || Auth;
+
+            // Firebase only supports updating profile name, not email (without re-authentication)
+            const result = await authHandler.updateProfile(name);
 
             if (result.success) {
                 settingsMessage.textContent = 'Settings saved successfully!';
@@ -341,16 +368,20 @@ const App = {
             }
         });
 
-        logoutBtn.addEventListener('click', () => {
+        logoutBtn.addEventListener('click', async () => {
             if (confirm('Are you sure you want to logout?')) {
-                Auth.logout();
+                // Use Firebase Auth if available, fallback to local Auth
+                const authHandler = window.FirebaseAuth || Auth;
+                await authHandler.logout();
                 this.showScreen('login-screen');
             }
         });
     },
 
     loadSettings() {
-        const user = Auth.getCurrentUser();
+        // Use Firebase Auth if available, fallback to local Auth
+        const authHandler = window.FirebaseAuth || Auth;
+        const user = authHandler.getCurrentUser();
         if (user) {
             document.getElementById('settings-email').value = user.email;
             document.getElementById('settings-name').value = user.name || '';
