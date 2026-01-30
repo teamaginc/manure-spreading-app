@@ -1,0 +1,21 @@
+name: Deploy to Dreamhost
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SFTP
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: iad1-shared-b7-33.dreamhost.com
+          username: dh_ijs34w
+          password: ${{ secrets.DREAMHOST_PASSWORD }}
+          local_path: './*'
+          remote_path: '/home/dh_ijs34w/app.teamaginc.com/'
+          sftp_only: true
