@@ -90,6 +90,29 @@
             <img src="assets/logo-dark.png" alt="TeamAg" class="menu-logo">
             <h1 class="welcome-text">Welcome, <span id="user-name">Farmer</span>!</h1>
 
+            <!-- Desktop-only quick actions (visible when sidebar handles main nav) -->
+            <div class="desktop-dashboard">
+                <p class="dashboard-subtitle">Use the sidebar to navigate, or jump to a quick action below.</p>
+                <div class="dashboard-cards">
+                    <div class="dashboard-card" data-sidebar-screen="setup-screen">
+                        <span class="dashboard-card-icon">🌾</span>
+                        <span class="dashboard-card-label">Start Spreading</span>
+                    </div>
+                    <div class="dashboard-card" id="dashboard-past-records">
+                        <span class="dashboard-card-icon">📋</span>
+                        <span class="dashboard-card-label">Past Records</span>
+                    </div>
+                    <div class="dashboard-card" data-sidebar-screen="export-screen">
+                        <span class="dashboard-card-icon">📊</span>
+                        <span class="dashboard-card-label">Export Data</span>
+                    </div>
+                    <div class="dashboard-card" id="dashboard-farm-profile">
+                        <span class="dashboard-card-icon">🏡</span>
+                        <span class="dashboard-card-label">Farm Profile</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="menu-buttons">
                 <button class="btn btn-menu btn-spread" data-screen="setup-screen">
                     <span class="btn-icon">🌾</span>

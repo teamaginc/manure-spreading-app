@@ -110,8 +110,9 @@ const App = {
             });
         }
 
-        // Setup sidebar navigation
+        // Setup sidebar navigation and desktop dashboard
         this.setupSidebar();
+        this.setupDesktopDashboard();
 
         // Listen for Firebase auth state changes
         window.addEventListener('authStateChanged', async (event) => {
@@ -659,6 +660,20 @@ const App = {
         if (btn) btn.classList.add('hidden');
         const sidebarBtn = document.getElementById('sidebar-admin-panel');
         if (sidebarBtn) sidebarBtn.classList.add('hidden');
+    },
+
+    setupDesktopDashboard() {
+        document.querySelectorAll('.dashboard-card[data-sidebar-screen]').forEach(card => {
+            card.addEventListener('click', () => this.showScreen(card.dataset.sidebarScreen));
+        });
+        const pastRecordsCard = document.getElementById('dashboard-past-records');
+        if (pastRecordsCard) {
+            pastRecordsCard.addEventListener('click', () => this.showScreen('past-records-screen'));
+        }
+        const farmProfileCard = document.getElementById('dashboard-farm-profile');
+        if (farmProfileCard) {
+            farmProfileCard.addEventListener('click', () => this.showScreen('farm-profile-screen'));
+        }
     },
 
     setupSidebar() {
