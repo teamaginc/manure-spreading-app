@@ -7,7 +7,7 @@ const FieldEditor = {
     existingLayers: null,
     mode: 'draw', // 'draw', 'edit', 'view'
     editingField: null,
-    adminFarmId: null,
+    adminFarmId: null, // Set by AdminPanel to operate on a farmer's farm instead of logged-in user's farm
 
     init() {
         if (this.map) {

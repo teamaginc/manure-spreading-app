@@ -8,8 +8,8 @@ const PastRecords = {
     allFields: [],
     farmMembers: [],
     selectedField: null,
-    adminFarmId: null,
-    adminUserId: null,
+    adminFarmId: null,  // Set by AdminPanel to scope fields to a specific farm
+    adminUserId: null,  // Set by AdminPanel to scope logs to a specific user
 
     async init() {
         if (this.isInitialized && this.map) {

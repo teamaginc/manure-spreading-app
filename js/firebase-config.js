@@ -328,6 +328,8 @@ const FirebaseAdmin = {
         await setDoc(doc(db, "users", userId), { features }, { merge: true });
     },
 
+    // IMPORTANT: GeoJSON must be stored as a JSON string (geojsonStr), not a raw object.
+    // Firestore does not support nested arrays, and GeoJSON coordinates are nested arrays.
     async saveFieldData(userId, fieldData) {
         const fieldId = Date.now().toString(36) + Math.random().toString(36).substr(2);
         const data = {
@@ -529,6 +531,8 @@ const FirebaseFarm = {
     },
 
     // Farm Fields
+    // IMPORTANT: GeoJSON stored as JSON string to avoid Firestore nested array limitation.
+    // Read side (getFarmFields) parses geojsonStr back to object.
     async saveFarmField(farmId, fieldData) {
         const fieldId = this.generateId();
         const toStore = { ...fieldData };
