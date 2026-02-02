@@ -12,9 +12,30 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TeamAg">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+    <!-- Desktop Sidebar (hidden on mobile, visible on desktop after login) -->
+    <nav class="app-sidebar" id="app-sidebar">
+        <div class="sidebar-logo">
+            <img src="assets/logo-light.png" alt="TeamAg">
+        </div>
+        <div class="sidebar-nav">
+            <button class="sidebar-nav-item" data-sidebar-screen="menu-screen"><span class="nav-icon">🏠</span>Home</button>
+            <button class="sidebar-nav-item" data-sidebar-screen="setup-screen"><span class="nav-icon">🌾</span>Spread Manure</button>
+            <button class="sidebar-nav-item" id="sidebar-load-prior"><span class="nav-icon">📂</span>Continue Prior Session</button>
+            <button class="sidebar-nav-item" data-sidebar-screen="export-screen"><span class="nav-icon">📊</span>Export Data</button>
+            <button class="sidebar-nav-item" id="sidebar-past-records"><span class="nav-icon">📋</span>Past Records</button>
+            <button class="sidebar-nav-item" data-sidebar-screen="settings-screen"><span class="nav-icon">⚙️</span>App Settings</button>
+            <button class="sidebar-nav-item" id="sidebar-farm-profile"><span class="nav-icon">🏡</span>Farm Profile</button>
+            <button class="sidebar-nav-item hidden" id="sidebar-admin-panel"><span class="nav-icon">🛡️</span>Admin Panel</button>
+        </div>
+        <div class="sidebar-logout">
+            <button class="sidebar-nav-item" id="sidebar-logout-btn"><span class="nav-icon">🚪</span>Logout</button>
+        </div>
+    </nav>
+
     <!-- Login Screen -->
     <div id="login-screen" class="screen active">
         <div class="screen-content">
@@ -82,9 +103,17 @@
                     <span class="btn-icon">📊</span>
                     <span class="btn-text">Export Data</span>
                 </button>
+                <button class="btn btn-menu btn-past-records" id="past-records-btn">
+                    <span class="btn-icon">📋</span>
+                    <span class="btn-text">View Past Records</span>
+                </button>
                 <button class="btn btn-menu btn-settings" data-screen="settings-screen">
                     <span class="btn-icon">⚙️</span>
                     <span class="btn-text">App Settings</span>
+                </button>
+                <button class="btn btn-menu btn-farm" id="farm-profile-btn">
+                    <span class="btn-icon">🏡</span>
+                    <span class="btn-text">Farm Profile</span>
                 </button>
                 <button class="btn btn-menu btn-admin hidden" id="admin-panel-btn">
                     <span class="btn-icon">🛡️</span>
@@ -105,6 +134,18 @@
             <h2>Spreading Setup</h2>
         </div>
         <div class="screen-content">
+            <div class="form-group">
+                <label for="setup-equipment">Equipment</label>
+                <select id="setup-equipment" class="select-large">
+                    <option value="">Select equipment...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="setup-storage">Manure Storage</label>
+                <select id="setup-storage" class="select-large">
+                    <option value="">Select storage...</option>
+                </select>
+            </div>
             <div class="form-row">
                 <div class="form-group form-group-half">
                     <label for="target-rate">Target Rate (gal/ac)</label>
@@ -147,6 +188,8 @@
                     <span class="status-dot"></span>
                     <span class="status-text">Waiting for GPS...</span>
                 </div>
+                <div class="load-counter hidden" id="load-counter">Load: 0</div>
+                <div class="calc-rate-display hidden" id="calc-rate-display">0 gal/ac</div>
                 <div class="speed-display" id="speed-display">
                     <span class="speed-value">0.0</span>
                     <span class="speed-unit">mph</span>
@@ -310,13 +353,177 @@
                 </label>
             </div>
 
-            <div class="field-upload-section">
-                <h4>Field Boundaries</h4>
-                <input type="file" id="shapefile-input" accept=".zip,.geojson,.json" class="hidden">
-                <button class="btn btn-primary" id="upload-shapefile-btn">Upload Shapefile / GeoJSON</button>
-                <div id="farmer-fields-list" class="fields-list">
-                    <p style="padding:12px;color:#666;">No fields uploaded.</p>
+            <!-- Farm Assignment -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Farm Assignment</h3>
+                <div class="admin-info-row">
+                    <span class="admin-info-label">Farm:</span>
+                    <span id="farmer-farm-name">No farm assigned</span>
                 </div>
+                <div class="admin-action-row">
+                    <button class="btn btn-primary" id="assign-farm-btn" style="flex:1;">Assign to Farm</button>
+                    <button class="btn btn-secondary" id="transfer-ownership-btn" style="flex:1;">Transfer Ownership</button>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="admin-action-row" style="margin-top:16px;">
+                <button class="btn btn-settings" id="admin-view-field-map-btn" style="flex:1;background:#546e7a;color:#fff;">View Fields on Map</button>
+                <button class="btn btn-past-records" id="admin-view-records-btn" style="flex:1;">View Past Records</button>
+            </div>
+
+            <!-- Equipment Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Equipment</h3>
+                <button class="btn btn-primary" id="admin-add-equipment-btn" style="width:100%;margin-bottom:12px;">Add Equipment</button>
+                <div id="admin-equipment-form-container" class="hidden" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px;">
+                    <form id="admin-equipment-form">
+                        <div class="form-group">
+                            <label for="admin-equip-name">Name / ID</label>
+                            <input type="text" id="admin-equip-name" required placeholder="e.g., Tank Wagon #1">
+                        </div>
+                        <div class="form-group">
+                            <label for="admin-equip-type">Equipment Type</label>
+                            <select id="admin-equip-type">
+                                <option value="Tank">Tank</option>
+                                <option value="Solid Manure Spreader">Solid Manure Spreader</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group form-group-half">
+                                <label for="admin-equip-capacity">Capacity</label>
+                                <input type="number" id="admin-equip-capacity" min="0" step="1" placeholder="e.g., 3000">
+                            </div>
+                            <div class="form-group form-group-half">
+                                <label for="admin-equip-units">Units</label>
+                                <select id="admin-equip-units">
+                                    <option value="Gallons">Gallons</option>
+                                    <option value="Cubic Feet">Cubic Feet</option>
+                                    <option value="Tons">Tons</option>
+                                    <option value="Cubic Yards">Cubic Yards</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button type="submit" class="btn btn-primary" style="flex:1;">Save</button>
+                            <button type="button" class="btn btn-danger" id="admin-equipment-cancel" style="flex:1;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="admin-equipment-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No equipment added yet.</p>
+                </div>
+            </div>
+
+            <!-- Storages Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Manure Storages</h3>
+                <button class="btn btn-primary" id="admin-add-storage-btn" style="width:100%;margin-bottom:12px;">Add Storage</button>
+                <div id="admin-storage-form-container" class="hidden" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px;">
+                    <form id="admin-storage-form">
+                        <div class="form-group">
+                            <label for="admin-storage-name">Storage Name</label>
+                            <input type="text" id="admin-storage-name" required placeholder="e.g., Main Pit">
+                        </div>
+                        <div class="form-group">
+                            <label for="admin-storage-source">Source</label>
+                            <select id="admin-storage-source">
+                                <option value="">Select source...</option>
+                                <option value="Dairy-Liquid">Dairy-Liquid</option>
+                                <option value="Dairy-Solid">Dairy-Solid</option>
+                                <option value="Swine">Swine</option>
+                                <option value="Poultry Litter">Poultry Litter</option>
+                                <option value="Biosolids">Biosolids</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group form-group-half">
+                                <label for="admin-storage-capacity">Capacity</label>
+                                <input type="number" id="admin-storage-capacity" min="0" step="1" placeholder="e.g., 500000">
+                            </div>
+                            <div class="form-group form-group-half">
+                                <label for="admin-storage-units">Units</label>
+                                <select id="admin-storage-units">
+                                    <option value="Gallons">Gallons</option>
+                                    <option value="Cubic Feet">Cubic Feet</option>
+                                    <option value="Tons">Tons</option>
+                                    <option value="Cubic Yards">Cubic Yards</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button type="submit" class="btn btn-primary" style="flex:1;">Save</button>
+                            <button type="button" class="btn btn-danger" id="admin-storage-cancel" style="flex:1;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="admin-storage-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No manure storages added yet.</p>
+                </div>
+            </div>
+
+            <!-- Farm Fields Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Farm Fields</h3>
+                <input type="file" id="admin-farm-shapefile-input" accept=".zip,.geojson,.json" class="hidden">
+                <button class="btn btn-primary" id="admin-upload-shapefile-btn" style="width:100%;margin-bottom:8px;">Upload Shapefile / GeoJSON</button>
+                <button class="btn btn-secondary" id="admin-draw-field-btn" style="width:100%;margin-bottom:12px;">Draw New Field</button>
+                <div id="admin-farm-fields-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No fields defined yet.</p>
+                </div>
+            </div>
+
+            <!-- Members Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Farm Members</h3>
+                <div id="admin-members-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No members.</p>
+                </div>
+            </div>
+
+            <!-- Legacy field boundaries (hidden, kept for backward compat) -->
+            <div class="field-upload-section hidden">
+                <input type="file" id="shapefile-input" accept=".zip,.geojson,.json" class="hidden">
+                <div id="farmer-fields-list" class="fields-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Assign Farm Modal -->
+    <div id="assign-farm-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>Assign to Farm</h3>
+            <div class="form-group">
+                <label for="assign-farm-select">Select Farm</label>
+                <select id="assign-farm-select">
+                    <option value="">Loading farms...</option>
+                </select>
+            </div>
+            <div id="new-farm-name-group" class="form-group hidden">
+                <label for="new-farm-name-input">New Farm Name</label>
+                <input type="text" id="new-farm-name-input" placeholder="Enter farm name">
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button class="btn btn-primary" id="assign-farm-confirm" style="flex:1;">Assign</button>
+                <button class="btn btn-danger" id="assign-farm-cancel" style="flex:1;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transfer Ownership Modal -->
+    <div id="transfer-ownership-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>Transfer Farm Ownership</h3>
+            <p style="font-size:0.85rem;color:#666;margin-bottom:16px;">Select the new owner. The current owner will become a regular member.</p>
+            <div class="form-group">
+                <label for="transfer-owner-select">New Owner</label>
+                <select id="transfer-owner-select">
+                    <option value="">Loading members...</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button class="btn btn-primary" id="transfer-ownership-confirm" style="flex:1;">Transfer</button>
+                <button class="btn btn-danger" id="transfer-ownership-cancel" style="flex:1;">Cancel</button>
             </div>
         </div>
     </div>
@@ -339,7 +546,222 @@
         </div>
     </div>
 
+    <!-- Farm Profile Screen -->
+    <div id="farm-profile-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="menu-screen">← Back</button>
+            <h2>Farm Profile</h2>
+        </div>
+        <div class="screen-content">
+            <div class="form-group">
+                <label for="farm-name-input">Farm Name</label>
+                <input type="text" id="farm-name-input" placeholder="Enter farm name">
+            </div>
+
+            <!-- Define Fields Section -->
+            <div class="farm-section">
+                <h3 class="farm-section-title">Define Fields</h3>
+                <input type="file" id="farm-shapefile-input" accept=".zip,.geojson,.json" class="hidden">
+                <button class="btn btn-primary" id="farm-upload-shapefile-btn" style="width:100%;margin-bottom:8px;">Upload Shapefile / GeoJSON</button>
+                <button class="btn btn-secondary" id="farm-draw-field-btn" style="width:100%;margin-bottom:8px;">Draw New Field</button>
+                <button class="btn btn-settings" id="farm-view-fields-btn" style="width:100%;margin-bottom:12px;background:#546e7a;color:#fff;">View All Fields on Map</button>
+                <div id="farm-fields-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No fields defined yet.</p>
+                </div>
+            </div>
+
+            <!-- Equipment Section -->
+            <div class="farm-section">
+                <h3 class="farm-section-title">Equipment</h3>
+                <button class="btn btn-primary" id="add-equipment-btn" style="width:100%;margin-bottom:12px;">Add Equipment</button>
+                <div id="equipment-form-container" class="hidden" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px;">
+                    <form id="equipment-form">
+                        <div class="form-group">
+                            <label for="equip-name">Name / ID</label>
+                            <input type="text" id="equip-name" required placeholder="e.g., Tank Wagon #1">
+                        </div>
+                        <div class="form-group">
+                            <label for="equip-type">Equipment Type</label>
+                            <select id="equip-type">
+                                <option value="Tank">Tank</option>
+                                <option value="Solid Manure Spreader">Solid Manure Spreader</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group form-group-half">
+                                <label for="equip-capacity">Capacity</label>
+                                <input type="number" id="equip-capacity" min="0" step="1" placeholder="e.g., 3000">
+                            </div>
+                            <div class="form-group form-group-half">
+                                <label for="equip-units">Units</label>
+                                <select id="equip-units">
+                                    <option value="Gallons">Gallons</option>
+                                    <option value="Cubic Feet">Cubic Feet</option>
+                                    <option value="Tons">Tons</option>
+                                    <option value="Cubic Yards">Cubic Yards</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button type="submit" class="btn btn-primary" style="flex:1;">Save</button>
+                            <button type="button" class="btn btn-danger" id="equipment-cancel" style="flex:1;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="equipment-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No equipment added yet.</p>
+                </div>
+            </div>
+
+            <!-- Manure Storages Section -->
+            <div class="farm-section">
+                <h3 class="farm-section-title">Manure Storages</h3>
+                <button class="btn btn-primary" id="add-storage-btn" style="width:100%;margin-bottom:12px;">Add Storage</button>
+                <div id="storage-form-container" class="hidden" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px;">
+                    <form id="storage-form">
+                        <div class="form-group">
+                            <label for="storage-name">Storage Name</label>
+                            <input type="text" id="storage-name" required placeholder="e.g., Main Pit">
+                        </div>
+                        <div class="form-group">
+                            <label for="storage-source">Source</label>
+                            <select id="storage-source">
+                                <option value="">Select source...</option>
+                                <option value="Dairy-Liquid">Dairy-Liquid</option>
+                                <option value="Dairy-Solid">Dairy-Solid</option>
+                                <option value="Swine">Swine</option>
+                                <option value="Poultry Litter">Poultry Litter</option>
+                                <option value="Biosolids">Biosolids</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group form-group-half">
+                                <label for="storage-capacity">Capacity</label>
+                                <input type="number" id="storage-capacity" min="0" step="1" placeholder="e.g., 500000">
+                            </div>
+                            <div class="form-group form-group-half">
+                                <label for="storage-units">Units</label>
+                                <select id="storage-units">
+                                    <option value="Gallons">Gallons</option>
+                                    <option value="Cubic Feet">Cubic Feet</option>
+                                    <option value="Tons">Tons</option>
+                                    <option value="Cubic Yards">Cubic Yards</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button type="submit" class="btn btn-primary" style="flex:1;">Save</button>
+                            <button type="button" class="btn btn-danger" id="storage-cancel" style="flex:1;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="storage-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">No manure storages added yet.</p>
+                </div>
+            </div>
+
+            <!-- Collaborators Section -->
+            <div class="farm-section">
+                <h3 class="farm-section-title">Collaborators</h3>
+                <div id="collaborator-list" class="fields-list" style="margin-bottom:12px;">
+                    <p style="padding:12px;color:#666;">No members.</p>
+                </div>
+                <button class="btn btn-primary" id="invite-collaborator-btn" style="width:100%;">Invite Farm Collaborator</button>
+            </div>
+
+            <!-- Invite Modal -->
+            <div id="invite-modal" class="modal-overlay hidden">
+                <div class="modal-content">
+                    <h3>Invite Farm Collaborator</h3>
+                    <form id="invite-form">
+                        <div class="form-group">
+                            <label for="invite-email">Email</label>
+                            <input type="email" id="invite-email" required placeholder="collaborator@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="invite-role">Role</label>
+                            <select id="invite-role">
+                                <option value="farming_partner">Farming Partner</option>
+                                <option value="commercial_partner">Commercial Partner / Custom Applicator</option>
+                            </select>
+                        </div>
+                        <p style="font-size:0.85rem;color:#666;margin-bottom:16px;">This will enable this individual to access your farm manure records as well as to spread manure through this app.</p>
+                        <div style="display:flex;gap:8px;">
+                            <button type="submit" class="btn btn-primary" style="flex:1;">Send Invite</button>
+                            <button type="button" class="btn btn-danger" id="invite-cancel" style="flex:1;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Load Modal -->
+    <div id="new-load-modal" class="modal-overlay hidden">
+        <div class="modal-content new-load-modal-content">
+            <h3>New Load?</h3>
+            <p style="margin-bottom:20px;color:#666;">Are you starting with a new load of manure?</p>
+            <div style="display:flex;gap:12px;">
+                <button class="btn btn-primary btn-large" id="new-load-yes" style="flex:1;">Yes</button>
+                <button class="btn btn-secondary btn-large" id="new-load-no" style="flex:1;">No</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Past Records Screen -->
+    <div id="past-records-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" id="past-records-back-btn">← Back</button>
+            <h2>Past Records</h2>
+        </div>
+        <div id="past-records-map" style="flex:1;width:100%;z-index:1;"></div>
+        <div id="record-panel" class="record-panel hidden">
+            <div id="record-panel-content"></div>
+        </div>
+    </div>
+
+    <!-- Edit Record Screen -->
+    <div id="edit-record-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" id="edit-record-back-btn">← Back</button>
+            <h2>Edit Record</h2>
+        </div>
+        <div id="edit-record-map" style="flex:1;width:100%;z-index:1;"></div>
+        <div class="edit-toolbar">
+            <span id="edit-point-count" class="edit-point-info">0 points</span>
+            <button class="btn btn-primary edit-tool-btn" id="edit-lasso-btn">Lasso</button>
+            <button class="btn btn-danger edit-tool-btn" id="edit-delete-btn">Delete</button>
+            <button class="btn btn-secondary edit-tool-btn" id="edit-undo-btn">Undo</button>
+            <button class="btn edit-tool-btn" id="edit-save-btn" style="background:#28a745;color:#fff;">Save</button>
+        </div>
+    </div>
+
+    <!-- Field Map Screen -->
+    <div id="field-map-screen" class="screen">
+        <div class="screen-header" style="z-index:1001;">
+            <button class="btn-back" id="field-map-back-btn">← Back</button>
+            <h2>Field Map</h2>
+            <button class="btn btn-primary" id="field-save-btn" style="padding:8px 16px;font-size:0.9rem;">Save</button>
+        </div>
+        <div id="field-editor-map" style="flex:1;width:100%;z-index:1;"></div>
+        <div id="field-edit-panel" class="hidden" style="position:absolute;bottom:0;left:0;right:0;z-index:1000;background:rgba(0,0,0,0.85);padding:16px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;gap:8px;">
+                <input type="text" id="field-edit-name" placeholder="Field Name" style="flex:2;padding:10px;border-radius:6px;border:none;font-size:1rem;">
+                <select id="field-edit-type" style="flex:1;padding:10px;border-radius:6px;border:none;font-size:0.9rem;">
+                    <option value="">Type...</option>
+                    <option value="Cropland">Cropland</option>
+                    <option value="Farmstead">Farmstead</option>
+                    <option value="AAL">AAL</option>
+                    <option value="Pasture">Pasture</option>
+                    <option value="Other">Other</option>
+                </select>
+                <input type="number" id="field-edit-acres" placeholder="Acres" style="flex:1;padding:10px;border-radius:6px;border:none;font-size:1rem;" step="0.1" min="0">
+            </div>
+        </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/auth.js"></script>
@@ -351,6 +773,10 @@
     <script src="js/shapefile-handler.js"></script>
     <script src="js/field-display.js"></script>
     <script src="js/admin.js"></script>
+    <script src="js/farm-profile.js"></script>
+    <script src="js/field-editor.js"></script>
+    <script src="js/past-records.js"></script>
+    <script src="js/record-editor.js"></script>
     <script type="module" src="js/firebase-config.js"></script>
     <script src="js/app.js"></script>
 </body>

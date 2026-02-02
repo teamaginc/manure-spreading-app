@@ -2,6 +2,11 @@
 
 const AdminPanel = {
     currentFarmerId: null,
+    currentFarmerFarmId: null,
+    farmerEquipment: [],
+    farmerStorages: [],
+    farmerFarmFields: [],
+    farmerMembers: [],
 
     init() {
         this.setupAdminButton();
@@ -69,14 +74,26 @@ const AdminPanel = {
                 return;
             }
 
+            // Fetch farm names for all users that have farmId
+            const farmNames = {};
+            for (const user of users) {
+                if (user.farmId) {
+                    try {
+                        const farm = await FirebaseFarm.getFarm(user.farmId);
+                        if (farm) farmNames[user.uid] = farm.name;
+                    } catch (e) { /* ignore */ }
+                }
+            }
+
             let html = '';
             users.forEach(user => {
                 const roleBadge = user.role === 'superadmin' ? '<span class="role-badge superadmin">Super Admin</span>' :
                                   user.role === 'admin' ? '<span class="role-badge admin">Admin</span>' : '';
                 const featureBadge = user.features && user.features.fieldShapefiles ? '<span class="feature-badge">Shapefiles</span>' : '';
+                const farmBadge = farmNames[user.uid] ? `<span class="admin-farm-badge">${farmNames[user.uid]}</span>` : '';
                 html += `
                     <div class="farmer-item" data-user-id="${user.uid}">
-                        <div class="farmer-name">${user.name || 'Unnamed'} ${roleBadge}</div>
+                        <div class="farmer-name">${user.name || 'Unnamed'} ${roleBadge} ${farmBadge}</div>
                         <div class="farmer-email">${user.email} ${featureBadge}</div>
                     </div>`;
             });
@@ -142,6 +159,7 @@ const AdminPanel = {
     // Farmer Detail
     async openFarmerDetail(userId) {
         this.currentFarmerId = userId;
+        this.currentFarmerFarmId = null;
         App.showScreen('farmer-detail-screen');
 
         try {
@@ -172,13 +190,506 @@ const AdminPanel = {
             const roleToggle = document.getElementById('farmer-admin-toggle');
             if (roleToggle) roleToggle.checked = userDoc.role === 'admin';
 
-            // Load fields
-            this.loadFarmerFields(userId);
+            // Load farm info and all sub-sections
+            await this.loadFarmerFarmInfo(userId);
         } catch (e) {
             console.error('Failed to load farmer detail:', e);
         }
     },
 
+    // --- Farm Info ---
+    async loadFarmerFarmInfo(userId) {
+        const farmNameEl = document.getElementById('farmer-farm-name');
+        const assignBtn = document.getElementById('assign-farm-btn');
+        const transferBtn = document.getElementById('transfer-ownership-btn');
+
+        try {
+            const userDoc = await FirebaseAdmin.getUserDoc(userId);
+            const farmId = userDoc ? userDoc.farmId : null;
+
+            if (farmId) {
+                const farm = await FirebaseFarm.getFarm(farmId);
+                if (farm) {
+                    this.currentFarmerFarmId = farmId;
+                    if (farmNameEl) farmNameEl.textContent = farm.name || 'Unnamed Farm';
+                    if (assignBtn) assignBtn.textContent = 'Change Farm';
+                    if (transferBtn) transferBtn.style.display = '';
+
+                    // Load all farm sub-sections
+                    await Promise.all([
+                        this.loadFarmerEquipment(farmId),
+                        this.loadFarmerStorages(farmId),
+                        this.loadFarmerFarmFields(farmId),
+                        this.loadFarmerMembers(farmId)
+                    ]);
+                    return;
+                }
+            }
+
+            // No farm
+            this.currentFarmerFarmId = null;
+            if (farmNameEl) farmNameEl.textContent = 'No farm assigned';
+            if (assignBtn) assignBtn.textContent = 'Assign to Farm';
+            if (transferBtn) transferBtn.style.display = 'none';
+
+            // Clear sub-sections
+            this.renderFarmerEquipment([]);
+            this.renderFarmerStorages([]);
+            this.renderFarmerFarmFields([]);
+            this.renderFarmerMembers([]);
+        } catch (e) {
+            console.error('Error loading farmer farm info:', e);
+        }
+    },
+
+    // --- Equipment CRUD ---
+    async loadFarmerEquipment(farmId) {
+        try {
+            this.farmerEquipment = await FirebaseFarm.getEquipment(farmId);
+            this.renderFarmerEquipment(this.farmerEquipment);
+        } catch (e) {
+            console.error('Error loading farmer equipment:', e);
+        }
+    },
+
+    renderFarmerEquipment(equipment) {
+        const container = document.getElementById('admin-equipment-list');
+        if (!container) return;
+
+        if (!equipment || equipment.length === 0) {
+            container.innerHTML = '<p style="padding:12px;color:#666;">No equipment added yet.</p>';
+            return;
+        }
+
+        container.innerHTML = equipment.map(eq => `
+            <div class="field-item" data-equip-id="${eq.id}">
+                <div>
+                    <div class="field-name">${eq.name}</div>
+                    <div class="field-meta">${eq.type} • ${eq.capacity} ${eq.units}</div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn-edit-admin-equip" data-equip-id="${eq.id}" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.8rem;cursor:pointer;">Edit</button>
+                    <button class="btn-delete-admin-equip" data-equip-id="${eq.id}" class="btn-delete-field">Delete</button>
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.btn-edit-admin-equip').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const eq = this.farmerEquipment.find(x => x.id === btn.dataset.equipId);
+                if (eq) this.showAdminEquipmentForm(eq);
+            });
+        });
+
+        container.querySelectorAll('.btn-delete-admin-equip').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (!this.currentFarmerFarmId) return;
+                if (!confirm('Delete this equipment?')) return;
+                try {
+                    await FirebaseFarm.deleteEquipment(this.currentFarmerFarmId, btn.dataset.equipId);
+                    await this.loadFarmerEquipment(this.currentFarmerFarmId);
+                } catch (err) {
+                    alert('Failed to delete: ' + err.message);
+                }
+            });
+        });
+    },
+
+    showAdminEquipmentForm(existing) {
+        const formContainer = document.getElementById('admin-equipment-form-container');
+        if (formContainer) formContainer.classList.remove('hidden');
+
+        const form = document.getElementById('admin-equipment-form');
+        if (!form) return;
+
+        form.dataset.editId = existing ? existing.id : '';
+        document.getElementById('admin-equip-name').value = existing ? existing.name : '';
+        document.getElementById('admin-equip-type').value = existing ? existing.type : 'Tank';
+        document.getElementById('admin-equip-capacity').value = existing ? existing.capacity : '';
+        document.getElementById('admin-equip-units').value = existing ? existing.units : 'Gallons';
+    },
+
+    async saveFarmerEquipment() {
+        if (!this.currentFarmerFarmId) return;
+        const form = document.getElementById('admin-equipment-form');
+        const editId = form.dataset.editId;
+
+        const data = {
+            name: document.getElementById('admin-equip-name').value.trim(),
+            type: document.getElementById('admin-equip-type').value,
+            capacity: parseFloat(document.getElementById('admin-equip-capacity').value) || 0,
+            units: document.getElementById('admin-equip-units').value
+        };
+
+        if (!data.name) { alert('Name is required.'); return; }
+
+        try {
+            if (editId) {
+                await FirebaseFarm.updateEquipment(this.currentFarmerFarmId, editId, data);
+            } else {
+                await FirebaseFarm.saveEquipment(this.currentFarmerFarmId, data);
+            }
+            document.getElementById('admin-equipment-form-container').classList.add('hidden');
+            await this.loadFarmerEquipment(this.currentFarmerFarmId);
+        } catch (e) {
+            alert('Failed to save equipment: ' + e.message);
+        }
+    },
+
+    // --- Storages CRUD ---
+    async loadFarmerStorages(farmId) {
+        try {
+            this.farmerStorages = await FirebaseFarm.getStorages(farmId);
+            this.renderFarmerStorages(this.farmerStorages);
+        } catch (e) {
+            console.error('Error loading farmer storages:', e);
+        }
+    },
+
+    renderFarmerStorages(storages) {
+        const container = document.getElementById('admin-storage-list');
+        if (!container) return;
+
+        if (!storages || storages.length === 0) {
+            container.innerHTML = '<p style="padding:12px;color:#666;">No manure storages added yet.</p>';
+            return;
+        }
+
+        container.innerHTML = storages.map(s => `
+            <div class="field-item" data-storage-id="${s.id}">
+                <div>
+                    <div class="field-name">${s.name}</div>
+                    <div class="field-meta">${s.source || ''} • ${s.capacity} ${s.units}</div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn-edit-admin-storage" data-storage-id="${s.id}" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.8rem;cursor:pointer;">Edit</button>
+                    <button class="btn-delete-admin-storage" data-storage-id="${s.id}" style="background:var(--danger-red);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.8rem;cursor:pointer;">Delete</button>
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.btn-edit-admin-storage').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const s = this.farmerStorages.find(x => x.id === btn.dataset.storageId);
+                if (s) this.showAdminStorageForm(s);
+            });
+        });
+
+        container.querySelectorAll('.btn-delete-admin-storage').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (!this.currentFarmerFarmId) return;
+                if (!confirm('Delete this storage?')) return;
+                try {
+                    await FirebaseFarm.deleteStorage(this.currentFarmerFarmId, btn.dataset.storageId);
+                    await this.loadFarmerStorages(this.currentFarmerFarmId);
+                } catch (err) {
+                    alert('Failed to delete: ' + err.message);
+                }
+            });
+        });
+    },
+
+    showAdminStorageForm(existing) {
+        const formContainer = document.getElementById('admin-storage-form-container');
+        if (formContainer) formContainer.classList.remove('hidden');
+
+        const form = document.getElementById('admin-storage-form');
+        if (!form) return;
+
+        form.dataset.editId = existing ? existing.id : '';
+        document.getElementById('admin-storage-name').value = existing ? existing.name : '';
+        document.getElementById('admin-storage-capacity').value = existing ? existing.capacity : '';
+        document.getElementById('admin-storage-units').value = existing ? existing.units : 'Gallons';
+        document.getElementById('admin-storage-source').value = existing ? existing.source : '';
+    },
+
+    async saveFarmerStorage() {
+        if (!this.currentFarmerFarmId) return;
+        const form = document.getElementById('admin-storage-form');
+        const editId = form.dataset.editId;
+
+        const data = {
+            name: document.getElementById('admin-storage-name').value.trim(),
+            capacity: parseFloat(document.getElementById('admin-storage-capacity').value) || 0,
+            units: document.getElementById('admin-storage-units').value,
+            source: document.getElementById('admin-storage-source').value
+        };
+
+        if (!data.name) { alert('Storage name is required.'); return; }
+
+        try {
+            if (editId) {
+                await FirebaseFarm.updateStorage(this.currentFarmerFarmId, editId, data);
+            } else {
+                await FirebaseFarm.saveStorage(this.currentFarmerFarmId, data);
+            }
+            document.getElementById('admin-storage-form-container').classList.add('hidden');
+            await this.loadFarmerStorages(this.currentFarmerFarmId);
+        } catch (e) {
+            alert('Failed to save storage: ' + e.message);
+        }
+    },
+
+    // --- Farm Fields ---
+    async loadFarmerFarmFields(farmId) {
+        try {
+            this.farmerFarmFields = await FirebaseFarm.getFarmFields(farmId);
+            this.renderFarmerFarmFields(this.farmerFarmFields);
+        } catch (e) {
+            console.error('Error loading farmer farm fields:', e);
+        }
+    },
+
+    renderFarmerFarmFields(fields) {
+        const container = document.getElementById('admin-farm-fields-list');
+        if (!container) return;
+
+        if (!fields || fields.length === 0) {
+            container.innerHTML = '<p style="padding:12px;color:#666;">No fields defined yet.</p>';
+            return;
+        }
+
+        container.innerHTML = fields.map(f => `
+            <div class="field-item" data-field-id="${f.id}">
+                <div>
+                    <div class="field-name">${f.name || 'Unnamed Field'}</div>
+                    <div class="field-meta">${f.fieldType || ''} ${f.acres ? '• ' + f.acres + ' ac' : ''}</div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn-edit-admin-field" data-field-id="${f.id}" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.8rem;cursor:pointer;">Edit</button>
+                    <button class="btn-delete-admin-field" data-field-id="${f.id}" style="background:var(--danger-red);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.8rem;cursor:pointer;">Delete</button>
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.btn-edit-admin-field').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const field = this.farmerFarmFields.find(f => f.id === btn.dataset.fieldId);
+                if (field && this.currentFarmerFarmId) {
+                    FieldEditor.mode = 'edit';
+                    FieldEditor.editingField = field;
+                    FieldEditor.adminFarmId = this.currentFarmerFarmId;
+                    App.showScreen('field-map-screen');
+                }
+            });
+        });
+
+        container.querySelectorAll('.btn-delete-admin-field').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (!this.currentFarmerFarmId) return;
+                if (!confirm('Delete this field?')) return;
+                try {
+                    await FirebaseFarm.deleteFarmField(this.currentFarmerFarmId, btn.dataset.fieldId);
+                    await this.loadFarmerFarmFields(this.currentFarmerFarmId);
+                } catch (err) {
+                    alert('Failed to delete field: ' + err.message);
+                }
+            });
+        });
+    },
+
+    handleFarmerFieldUpload(e) {
+        const file = e.target.files[0];
+        if (!file || !this.currentFarmerFarmId) return;
+
+        const farmId = this.currentFarmerFarmId;
+        const uploadBtn = document.getElementById('admin-upload-shapefile-btn');
+
+        (async () => {
+            try {
+                if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.textContent = 'Parsing...'; }
+                const geojson = await ShapefileHandler.parseFile(file);
+                const user = FirebaseAuth.getCurrentUser();
+
+                const features = geojson.features || [];
+                if (features.length === 0) {
+                    alert('No features found in file.');
+                    return;
+                }
+
+                for (let i = 0; i < features.length; i++) {
+                    const feat = features[i];
+                    const props = feat.properties || {};
+                    const name = props.Name || props.name || props.NAME || file.name.replace(/\.[^.]+$/, '') + (features.length > 1 ? ` (${i + 1})` : '');
+                    const acres = props.Acres || props.acres || props.ACRES || '';
+                    const fieldType = props.Type || props.type || props.TYPE || props.fieldType || '';
+
+                    const singleGeoJSON = { type: 'FeatureCollection', features: [feat] };
+                    await FirebaseFarm.saveFarmField(farmId, {
+                        name: name,
+                        fieldType: fieldType,
+                        acres: acres,
+                        uploadedBy: user.uid,
+                        geojson: singleGeoJSON,
+                        metadata: { originalFile: file.name, featureCount: 1 }
+                    });
+                }
+
+                e.target.value = '';
+                await this.loadFarmerFarmFields(farmId);
+                alert(`${features.length} field(s) imported successfully.`);
+            } catch (err) {
+                alert('Failed to parse file: ' + err.message);
+            } finally {
+                if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = 'Upload Shapefile / GeoJSON'; }
+            }
+        })();
+    },
+
+    // --- Members ---
+    async loadFarmerMembers(farmId) {
+        try {
+            this.farmerMembers = await FirebaseFarm.getMembers(farmId);
+            this.renderFarmerMembers(this.farmerMembers);
+        } catch (e) {
+            console.error('Error loading farmer members:', e);
+        }
+    },
+
+    renderFarmerMembers(members) {
+        const container = document.getElementById('admin-members-list');
+        if (!container) return;
+
+        if (!members || members.length === 0) {
+            container.innerHTML = '<p style="padding:12px;color:#666;">No members.</p>';
+            return;
+        }
+
+        container.innerHTML = members.map(m => `
+            <div class="field-item">
+                <div>
+                    <div class="field-name">${m.name || m.email}</div>
+                    <div class="field-meta">${m.email}</div>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                    <span class="role-badge" style="background:${m.role === 'owner' ? '#2d5a27' : '#5c6bc0'};color:#fff;">${m.role}</span>
+                    ${m.role !== 'owner' ? `<button class="btn-remove-member" data-user-id="${m.userId}" style="background:var(--danger-red);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.8rem;cursor:pointer;">Remove</button>` : ''}
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.btn-remove-member').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (!this.currentFarmerFarmId) return;
+                if (!confirm('Remove this member from the farm?')) return;
+                try {
+                    await FirebaseAdmin.removeUserFromFarm(btn.dataset.userId, this.currentFarmerFarmId);
+                    await this.loadFarmerMembers(this.currentFarmerFarmId);
+                } catch (err) {
+                    alert('Failed to remove member: ' + err.message);
+                }
+            });
+        });
+    },
+
+    // --- Assign Farm Modal ---
+    async showAssignFarmModal() {
+        const modal = document.getElementById('assign-farm-modal');
+        const select = document.getElementById('assign-farm-select');
+        if (!modal || !select) return;
+
+        select.innerHTML = '<option value="">Loading...</option>';
+        modal.classList.remove('hidden');
+
+        try {
+            const farms = await FirebaseAdmin.getAllFarms();
+            let opts = '<option value="">Select a farm...</option>';
+            farms.forEach(f => {
+                opts += `<option value="${f.id}">${f.name || 'Unnamed Farm'}</option>`;
+            });
+            opts += '<option value="__new__">+ Create New Farm</option>';
+            select.innerHTML = opts;
+        } catch (e) {
+            select.innerHTML = '<option value="">Error loading farms</option>';
+        }
+    },
+
+    async assignFarm(userId, farmId) {
+        try {
+            if (farmId === '__new__') {
+                const name = document.getElementById('new-farm-name-input').value.trim();
+                if (!name) { alert('Farm name is required.'); return; }
+                farmId = await FirebaseFarm.createFarm(name, userId);
+                await FirebaseFarm.addMember(farmId, {
+                    userId: userId,
+                    email: (await FirebaseAdmin.getUserDoc(userId)).email,
+                    name: (await FirebaseAdmin.getUserDoc(userId)).name || '',
+                    role: 'owner'
+                });
+            } else {
+                await FirebaseAdmin.assignUserToFarm(userId, farmId);
+            }
+
+            document.getElementById('assign-farm-modal').classList.add('hidden');
+            await this.loadFarmerFarmInfo(userId);
+        } catch (e) {
+            alert('Failed to assign farm: ' + e.message);
+        }
+    },
+
+    // --- Transfer Ownership Modal ---
+    async showTransferOwnershipModal() {
+        const modal = document.getElementById('transfer-ownership-modal');
+        const select = document.getElementById('transfer-owner-select');
+        if (!modal || !select || !this.currentFarmerFarmId) return;
+
+        select.innerHTML = '<option value="">Loading...</option>';
+        modal.classList.remove('hidden');
+
+        try {
+            const members = await FirebaseFarm.getMembers(this.currentFarmerFarmId);
+            let opts = '<option value="">Select new owner...</option>';
+            members.filter(m => m.role !== 'owner').forEach(m => {
+                opts += `<option value="${m.userId}">${m.name || m.email}</option>`;
+            });
+            select.innerHTML = opts;
+        } catch (e) {
+            select.innerHTML = '<option value="">Error loading members</option>';
+        }
+    },
+
+    async transferOwnership(farmId, newOwnerId) {
+        try {
+            await FirebaseAdmin.transferFarmOwnership(farmId, this.currentFarmerId, newOwnerId);
+            document.getElementById('transfer-ownership-modal').classList.add('hidden');
+            await this.loadFarmerMembers(farmId);
+            alert('Ownership transferred successfully.');
+        } catch (e) {
+            alert('Failed to transfer ownership: ' + e.message);
+        }
+    },
+
+    // --- View Field Map ---
+    viewFarmerFieldMap() {
+        if (!this.currentFarmerFarmId) {
+            alert('This farmer has no farm assigned.');
+            return;
+        }
+        FieldEditor.mode = 'view';
+        FieldEditor.adminFarmId = this.currentFarmerFarmId;
+        App.showScreen('field-map-screen');
+    },
+
+    // --- View Past Records ---
+    viewFarmerRecords() {
+        if (!this.currentFarmerFarmId) {
+            alert('This farmer has no farm assigned.');
+            return;
+        }
+        PastRecords.adminFarmId = this.currentFarmerFarmId;
+        PastRecords.adminUserId = this.currentFarmerId;
+        PastRecords.cleanup();
+        App.showScreen('past-records-screen');
+    },
+
+    // --- Legacy field loading (still used for old shapefile-input) ---
     async loadFarmerFields(userId) {
         const container = document.getElementById('farmer-fields-list');
         if (!container) return;
@@ -186,7 +697,7 @@ const AdminPanel = {
         try {
             const fields = await FirebaseAdmin.getUserFields(userId);
             if (fields.length === 0) {
-                container.innerHTML = '<p style="padding:12px;color:#666;">No fields uploaded.</p>';
+                container.innerHTML = '';
                 return;
             }
 
@@ -214,7 +725,7 @@ const AdminPanel = {
                 });
             });
         } catch (e) {
-            container.innerHTML = '<p style="padding:12px;color:#666;">Error loading fields.</p>';
+            container.innerHTML = '';
         }
     },
 
@@ -239,36 +750,125 @@ const AdminPanel = {
             });
         }
 
-        // Shapefile upload
-        const uploadBtn = document.getElementById('upload-shapefile-btn');
-        const fileInput = document.getElementById('shapefile-input');
-        if (uploadBtn && fileInput) {
-            uploadBtn.addEventListener('click', () => fileInput.click());
-            fileInput.addEventListener('change', async () => {
-                const file = fileInput.files[0];
-                if (!file || !this.currentFarmerId) return;
+        // Assign Farm button
+        const assignFarmBtn = document.getElementById('assign-farm-btn');
+        if (assignFarmBtn) {
+            assignFarmBtn.addEventListener('click', () => this.showAssignFarmModal());
+        }
 
-                try {
-                    uploadBtn.disabled = true;
-                    uploadBtn.textContent = 'Parsing...';
-                    const geojson = await ShapefileHandler.parseFile(file);
-                    const fieldName = file.name.replace(/\.(zip|geojson|json)$/i, '');
-
-                    await FirebaseAdmin.saveFieldData(this.currentFarmerId, {
-                        name: fieldName,
-                        geojson: geojson,
-                        metadata: { originalFile: file.name, featureCount: geojson.features.length }
-                    });
-
-                    this.loadFarmerFields(this.currentFarmerId);
-                    alert('Field uploaded successfully.');
-                } catch (err) {
-                    alert('Upload failed: ' + err.message);
-                } finally {
-                    uploadBtn.disabled = false;
-                    uploadBtn.textContent = 'Upload Shapefile / GeoJSON';
-                    fileInput.value = '';
+        // Assign Farm modal events
+        const assignFarmSelect = document.getElementById('assign-farm-select');
+        if (assignFarmSelect) {
+            assignFarmSelect.addEventListener('change', () => {
+                const newFarmGroup = document.getElementById('new-farm-name-group');
+                if (newFarmGroup) {
+                    newFarmGroup.classList.toggle('hidden', assignFarmSelect.value !== '__new__');
                 }
+            });
+        }
+        const assignFarmConfirm = document.getElementById('assign-farm-confirm');
+        if (assignFarmConfirm) {
+            assignFarmConfirm.addEventListener('click', () => {
+                const val = document.getElementById('assign-farm-select').value;
+                if (!val) { alert('Please select a farm.'); return; }
+                this.assignFarm(this.currentFarmerId, val);
+            });
+        }
+        const assignFarmCancel = document.getElementById('assign-farm-cancel');
+        if (assignFarmCancel) {
+            assignFarmCancel.addEventListener('click', () => {
+                document.getElementById('assign-farm-modal').classList.add('hidden');
+            });
+        }
+
+        // Transfer Ownership button
+        const transferBtn = document.getElementById('transfer-ownership-btn');
+        if (transferBtn) {
+            transferBtn.addEventListener('click', () => this.showTransferOwnershipModal());
+        }
+        const transferConfirm = document.getElementById('transfer-ownership-confirm');
+        if (transferConfirm) {
+            transferConfirm.addEventListener('click', () => {
+                const newOwnerId = document.getElementById('transfer-owner-select').value;
+                if (!newOwnerId) { alert('Please select a new owner.'); return; }
+                if (!confirm('Are you sure you want to transfer ownership?')) return;
+                this.transferOwnership(this.currentFarmerFarmId, newOwnerId);
+            });
+        }
+        const transferCancel = document.getElementById('transfer-ownership-cancel');
+        if (transferCancel) {
+            transferCancel.addEventListener('click', () => {
+                document.getElementById('transfer-ownership-modal').classList.add('hidden');
+            });
+        }
+
+        // View Field Map button
+        const viewMapBtn = document.getElementById('admin-view-field-map-btn');
+        if (viewMapBtn) {
+            viewMapBtn.addEventListener('click', () => this.viewFarmerFieldMap());
+        }
+
+        // View Past Records button
+        const viewRecordsBtn = document.getElementById('admin-view-records-btn');
+        if (viewRecordsBtn) {
+            viewRecordsBtn.addEventListener('click', () => this.viewFarmerRecords());
+        }
+
+        // Admin Equipment form
+        const adminAddEquipBtn = document.getElementById('admin-add-equipment-btn');
+        if (adminAddEquipBtn) {
+            adminAddEquipBtn.addEventListener('click', () => this.showAdminEquipmentForm());
+        }
+        const adminEquipForm = document.getElementById('admin-equipment-form');
+        if (adminEquipForm) {
+            adminEquipForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveFarmerEquipment();
+            });
+        }
+        const adminEquipCancel = document.getElementById('admin-equipment-cancel');
+        if (adminEquipCancel) {
+            adminEquipCancel.addEventListener('click', () => {
+                document.getElementById('admin-equipment-form-container').classList.add('hidden');
+            });
+        }
+
+        // Admin Storage form
+        const adminAddStorageBtn = document.getElementById('admin-add-storage-btn');
+        if (adminAddStorageBtn) {
+            adminAddStorageBtn.addEventListener('click', () => this.showAdminStorageForm());
+        }
+        const adminStorageForm = document.getElementById('admin-storage-form');
+        if (adminStorageForm) {
+            adminStorageForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveFarmerStorage();
+            });
+        }
+        const adminStorageCancel = document.getElementById('admin-storage-cancel');
+        if (adminStorageCancel) {
+            adminStorageCancel.addEventListener('click', () => {
+                document.getElementById('admin-storage-form-container').classList.add('hidden');
+            });
+        }
+
+        // Admin Field upload
+        const adminUploadBtn = document.getElementById('admin-upload-shapefile-btn');
+        const adminFileInput = document.getElementById('admin-farm-shapefile-input');
+        if (adminUploadBtn && adminFileInput) {
+            adminUploadBtn.addEventListener('click', () => adminFileInput.click());
+            adminFileInput.addEventListener('change', (e) => this.handleFarmerFieldUpload(e));
+        }
+
+        // Admin Draw field
+        const adminDrawBtn = document.getElementById('admin-draw-field-btn');
+        if (adminDrawBtn) {
+            adminDrawBtn.addEventListener('click', () => {
+                if (!this.currentFarmerFarmId) { alert('No farm assigned.'); return; }
+                FieldEditor.mode = 'draw';
+                FieldEditor.editingField = null;
+                FieldEditor.adminFarmId = this.currentFarmerFarmId;
+                App.showScreen('field-map-screen');
             });
         }
     },

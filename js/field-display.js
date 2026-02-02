@@ -17,8 +17,20 @@ const FieldDisplay = {
         const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
         if (!user) return;
 
-        // Check if feature is enabled for this user
         try {
+            // Try loading from farm fields first
+            if (window.FirebaseFarm) {
+                const farm = await FirebaseFarm.getFarmByUser(user.uid);
+                if (farm) {
+                    const fields = await FirebaseFarm.getFarmFields(farm.id);
+                    if (fields.length > 0) {
+                        this.displayFields(fields);
+                        return;
+                    }
+                }
+            }
+
+            // Fallback to user-level fields
             const userDoc = await FirebaseAdmin.getUserDoc(user.uid);
             if (!userDoc || !userDoc.features || !userDoc.features.fieldShapefiles) return;
 
@@ -37,20 +49,35 @@ const FieldDisplay = {
             if (!field.geojson) return;
             const layer = L.geoJSON(field.geojson, {
                 style: {
-                    color: '#DAA520',
+                    color: '#FFFF00',
                     weight: 3,
-                    fillColor: '#DAA520',
-                    fillOpacity: 0.15,
-                    dashArray: '5,5'
+                    fillColor: '#FFFF00',
+                    fillOpacity: 0.15
                 },
                 onEachFeature: (feature, lyr) => {
+                    // Build label text
+                    const parts = [];
+                    if (field.name) parts.push(field.name);
+                    if (field.fieldType) parts.push(field.fieldType);
+                    if (field.acres) parts.push(field.acres + ' ac');
+
+                    const label = parts.join('\n');
+                    if (label) {
+                        lyr.bindTooltip(label, {
+                            permanent: true,
+                            direction: 'center',
+                            className: 'field-label-tooltip'
+                        });
+                    }
+
+                    // Also keep popup for click
                     const props = feature.properties || {};
                     const entries = Object.entries(props).filter(([, v]) => v != null && v !== '');
                     if (entries.length > 0) {
                         const html = entries.map(([k, v]) => `<b>${k}:</b> ${v}`).join('<br>');
                         lyr.bindPopup(`<div style="max-height:200px;overflow:auto"><b>${field.name}</b><br>${html}</div>`);
                     } else {
-                        lyr.bindPopup(`<b>${field.name}</b>`);
+                        lyr.bindPopup(`<b>${field.name || 'Field'}</b>`);
                     }
                 }
             }).addTo(MapManager.map);

@@ -12,6 +12,9 @@ const SpreadingTracker = {
     positionUpdateInterval: 3000, // Update every 3 seconds minimum
     currentSpeed: 0,
     priorSessionId: null, // Track if continuing from prior session
+    totalDistanceMeters: 0,
+    equipmentCapacity: null,
+    loadCount: 0,
 
     async startTracking(tractorColor, manureColor, targetRate, spreadWidth, priorSessionId = null) {
         if (this.isTracking) {
@@ -27,6 +30,7 @@ const SpreadingTracker = {
         this.isTracking = true;
         this.lastPosition = null;
         this.currentSpeed = 0;
+        this.totalDistanceMeters = 0;
 
         // Initialize the current log
         this.currentLog = {
@@ -118,6 +122,15 @@ const SpreadingTracker = {
         const shouldAddPoint = this.shouldAddPoint(latitude, longitude);
 
         if (shouldAddPoint) {
+            // Accumulate distance
+            if (this.lastPosition) {
+                const segmentDist = this.calculateDistance(
+                    this.lastPosition.lat, this.lastPosition.lng,
+                    latitude, longitude
+                );
+                this.totalDistanceMeters += segmentDist;
+            }
+
             // Add to path
             MapManager.addPathPoint(latitude, longitude);
 
@@ -133,6 +146,9 @@ const SpreadingTracker = {
             });
 
             this.lastPosition = { lat: latitude, lng: longitude, time: Date.now() };
+
+            // Update calculated rate display
+            this.updateCalcRateDisplay();
         }
     },
 
@@ -230,6 +246,12 @@ const SpreadingTracker = {
 
         // Finalize the log
         this.currentLog.endTime = new Date().toISOString();
+        this.currentLog.totalDistanceMeters = this.totalDistanceMeters;
+
+        const totalDistanceFeet = this.totalDistanceMeters * 3.28084;
+        const acresCovered = (totalDistanceFeet * this.spreadWidth) / 43560;
+        this.currentLog.acresCovered = acresCovered;
+        this.currentLog.calculatedRate = this.getCalculatedRate();
 
         // Save to database (use Firebase if available, fallback to local)
         try {
@@ -253,6 +275,27 @@ const SpreadingTracker = {
         } catch (error) {
             console.error('Failed to save spreading log:', error);
             throw error;
+        }
+    },
+
+    getCalculatedRate() {
+        if (!this.equipmentCapacity || !this.loadCount || this.totalDistanceMeters <= 0) {
+            return null;
+        }
+        const totalDistanceFeet = this.totalDistanceMeters * 3.28084;
+        const acresCovered = (totalDistanceFeet * this.spreadWidth) / 43560;
+        if (acresCovered <= 0) return null;
+        return (this.equipmentCapacity * this.loadCount) / acresCovered;
+    },
+
+    updateCalcRateDisplay() {
+        const calcRateEl = document.getElementById('calc-rate-display');
+        if (!calcRateEl) return;
+
+        const rate = this.getCalculatedRate();
+        if (rate !== null) {
+            calcRateEl.textContent = `${rate.toFixed(0)} gal/ac`;
+            calcRateEl.classList.remove('hidden');
         }
     },
 

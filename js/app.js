@@ -4,6 +4,7 @@ const App = {
     currentScreen: 'login-screen',
     selectedPriorSession: null,
     authInitialized: false,
+    loadCount: 0,
 
     async init() {
         // Initialize IndexedDB as fallback
@@ -27,6 +28,76 @@ const App = {
             AdminPanel.init();
         }
 
+        // Initialize farm profile
+        if (typeof FarmProfile !== 'undefined') {
+            FarmProfile.init();
+        }
+
+        // Farm Profile button
+        const farmProfileBtn = document.getElementById('farm-profile-btn');
+        if (farmProfileBtn) {
+            farmProfileBtn.addEventListener('click', () => {
+                this.showScreen('farm-profile-screen');
+            });
+        }
+
+        // Field map back button
+        const fieldMapBackBtn = document.getElementById('field-map-back-btn');
+        if (fieldMapBackBtn) {
+            fieldMapBackBtn.addEventListener('click', () => {
+                const wasAdmin = !!FieldEditor.adminFarmId;
+                FieldEditor.cleanup();
+                if (wasAdmin) {
+                    App.showScreen('farmer-detail-screen');
+                    if (AdminPanel.currentFarmerFarmId) {
+                        AdminPanel.loadFarmerFarmFields(AdminPanel.currentFarmerFarmId);
+                    }
+                } else {
+                    App.showScreen('farm-profile-screen');
+                }
+            });
+        }
+
+        // Field save button
+        const fieldSaveBtn = document.getElementById('field-save-btn');
+        if (fieldSaveBtn) {
+            fieldSaveBtn.addEventListener('click', () => {
+                FieldEditor.saveField();
+            });
+        }
+
+        // Past Records button
+        const pastRecordsBtn = document.getElementById('past-records-btn');
+        if (pastRecordsBtn) {
+            pastRecordsBtn.addEventListener('click', () => {
+                this.showScreen('past-records-screen');
+            });
+        }
+
+        // Past Records back button
+        const pastRecordsBackBtn = document.getElementById('past-records-back-btn');
+        if (pastRecordsBackBtn) {
+            pastRecordsBackBtn.addEventListener('click', () => {
+                const wasAdmin = !!PastRecords.adminFarmId;
+                PastRecords.cleanup();
+                if (wasAdmin) {
+                    this.showScreen('farmer-detail-screen');
+                } else {
+                    this.showScreen('menu-screen');
+                }
+            });
+        }
+
+        // Edit Record back button
+        const editRecordBackBtn = document.getElementById('edit-record-back-btn');
+        if (editRecordBackBtn) {
+            editRecordBackBtn.addEventListener('click', () => {
+                RecordEditor.cleanup();
+                this.showScreen('past-records-screen');
+                setTimeout(() => PastRecords.init(), 150);
+            });
+        }
+
         // Menu logout button
         const menuLogoutBtn = document.getElementById('menu-logout-btn');
         if (menuLogoutBtn) {
@@ -39,6 +110,9 @@ const App = {
             });
         }
 
+        // Setup sidebar navigation
+        this.setupSidebar();
+
         // Listen for Firebase auth state changes
         window.addEventListener('authStateChanged', async (event) => {
             const user = event.detail.user;
@@ -50,13 +124,19 @@ const App = {
                     email: user.email,
                     name: user.displayName || ''
                 });
+                document.body.classList.add('has-sidebar');
                 // Check admin role and show/hide admin button
                 await this.updateAdminVisibility();
                 if (this.currentScreen === 'login-screen') {
                     this.showScreen('menu-screen');
                 }
+                // Check pending invites
+                if (typeof FarmProfile !== 'undefined') {
+                    FarmProfile.checkPendingInvites();
+                }
             } else {
                 console.log('User logged out');
+                document.body.classList.remove('has-sidebar');
                 this.hideAdminButton();
                 this.showScreen('login-screen');
             }
@@ -100,8 +180,20 @@ const App = {
                 ExportManager.renderLogsList();
             } else if (screenId === 'settings-screen') {
                 this.loadSettings();
+            } else if (screenId === 'setup-screen') {
+                this.populateSetupDropdowns();
             } else if (screenId === 'load-screen') {
                 this.renderPriorSessions();
+            } else if (screenId === 'farm-profile-screen') {
+                if (typeof FarmProfile !== 'undefined') FarmProfile.load();
+            } else if (screenId === 'field-map-screen') {
+                setTimeout(() => {
+                    if (typeof FieldEditor !== 'undefined') FieldEditor.init();
+                }, 100);
+            } else if (screenId === 'past-records-screen') {
+                setTimeout(() => {
+                    if (typeof PastRecords !== 'undefined') PastRecords.init();
+                }, 100);
             }
         }
     },
@@ -201,17 +293,85 @@ const App = {
         });
     },
 
+    showNewLoadModal() {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('new-load-modal');
+            const yesBtn = document.getElementById('new-load-yes');
+            const noBtn = document.getElementById('new-load-no');
+
+            const cleanup = (result) => {
+                modal.classList.add('hidden');
+                yesBtn.removeEventListener('click', onYes);
+                noBtn.removeEventListener('click', onNo);
+                resolve(result);
+            };
+
+            const onYes = () => cleanup(true);
+            const onNo = () => cleanup(false);
+
+            yesBtn.addEventListener('click', onYes);
+            noBtn.addEventListener('click', onNo);
+            modal.classList.remove('hidden');
+        });
+    },
+
+    async getEquipmentCapacity(equipId) {
+        try {
+            const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
+            if (!user || !window.FirebaseFarm) return null;
+            const farm = await FirebaseFarm.getFarmByUser(user.uid);
+            if (!farm) return null;
+            const equipment = await FirebaseFarm.getEquipment(farm.id);
+            const equip = equipment.find(e => e.id === equipId);
+            return equip ? parseFloat(equip.capacity) || null : null;
+        } catch (e) {
+            console.error('Error getting equipment capacity:', e);
+            return null;
+        }
+    },
+
     setupSpreading() {
         const startBtn = document.getElementById('start-spreading');
         const stopBtn = document.getElementById('stop-spreading');
 
         startBtn.addEventListener('click', async () => {
-            const tractorColor = 'green'; // Default tractor color
-            const manureColor = 'brown'; // Default manure color
+            // Show "New Load?" modal first
+            const isNewLoad = await this.showNewLoadModal();
+            if (isNewLoad) {
+                this.loadCount++;
+            }
+
+            const tractorColor = 'green';
+            const manureColor = 'brown';
             const targetRate = document.getElementById('target-rate').value;
             const spreadWidth = document.getElementById('spread-width').value || 50;
 
+            // Get equipment and storage selections
+            const equipSelect = document.getElementById('setup-equipment');
+            const storageSelect = document.getElementById('setup-storage');
+            const selectedEquipment = equipSelect ? equipSelect.options[equipSelect.selectedIndex] : null;
+            const selectedStorage = storageSelect ? storageSelect.options[storageSelect.selectedIndex] : null;
+
+            // Get equipment capacity for calculated rate
+            let equipmentCapacity = null;
+            if (selectedEquipment && selectedEquipment.value) {
+                equipmentCapacity = await this.getEquipmentCapacity(selectedEquipment.value);
+            }
+
             this.showScreen('map-screen');
+
+            // Update load counter display
+            const loadCounterEl = document.getElementById('load-counter');
+            if (loadCounterEl) {
+                loadCounterEl.textContent = `Load: ${this.loadCount}`;
+                loadCounterEl.classList.remove('hidden');
+            }
+
+            // Show calc rate display if we have equipment capacity
+            const calcRateEl = document.getElementById('calc-rate-display');
+            if (calcRateEl && equipmentCapacity) {
+                calcRateEl.classList.remove('hidden');
+            }
 
             // If there's a selected prior session, load it on the map
             if (this.selectedPriorSession) {
@@ -226,6 +386,25 @@ const App = {
                 this.selectedPriorSession?.id || null
             );
 
+            // Set equipment capacity and load count on tracker
+            SpreadingTracker.equipmentCapacity = equipmentCapacity;
+            SpreadingTracker.loadCount = this.loadCount;
+
+            // Attach equipment/storage info to the log
+            if (SpreadingTracker.currentLog) {
+                SpreadingTracker.currentLog.loadCount = this.loadCount;
+                SpreadingTracker.currentLog.equipmentCapacity = equipmentCapacity;
+
+                if (selectedEquipment && selectedEquipment.value) {
+                    SpreadingTracker.currentLog.equipmentId = selectedEquipment.value;
+                    SpreadingTracker.currentLog.equipmentName = selectedEquipment.textContent;
+                }
+                if (selectedStorage && selectedStorage.value) {
+                    SpreadingTracker.currentLog.storageId = selectedStorage.value;
+                    SpreadingTracker.currentLog.storageName = selectedStorage.textContent;
+                }
+            }
+
             if (!result.success) {
                 alert('Failed to start GPS tracking: ' + result.error);
             }
@@ -237,8 +416,18 @@ const App = {
 
                 if (log) {
                     const pointCount = log.path ? log.path.length : 0;
-                    alert(`Spreading recorded!\n${pointCount} GPS points captured.`);
+                    let msg = `Spreading recorded!\n${pointCount} GPS points captured.`;
+                    if (log.calculatedRate) {
+                        msg += `\nCalculated rate: ${log.calculatedRate.toFixed(0)} gal/ac`;
+                    }
+                    alert(msg);
                 }
+
+                // Hide load counter and calc rate display
+                const loadCounterEl = document.getElementById('load-counter');
+                if (loadCounterEl) loadCounterEl.classList.add('hidden');
+                const calcRateEl = document.getElementById('calc-rate-display');
+                if (calcRateEl) calcRateEl.classList.add('hidden');
 
                 // Clear selected prior session
                 this.selectedPriorSession = null;
@@ -431,14 +620,89 @@ const App = {
         try {
             const isAdmin = await FirebaseAdmin.isAdmin();
             btn.classList.toggle('hidden', !isAdmin);
+            const sidebarBtn = document.getElementById('sidebar-admin-panel');
+            if (sidebarBtn) sidebarBtn.classList.toggle('hidden', !isAdmin);
         } catch (e) {
             btn.classList.add('hidden');
+        }
+    },
+
+    async populateSetupDropdowns() {
+        const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
+        if (!user || !window.FirebaseFarm) return;
+
+        try {
+            const farm = await FirebaseFarm.getFarmByUser(user.uid);
+            if (!farm) return;
+
+            const equipSelect = document.getElementById('setup-equipment');
+            const storageSelect = document.getElementById('setup-storage');
+
+            if (equipSelect) {
+                const equipment = await FirebaseFarm.getEquipment(farm.id);
+                equipSelect.innerHTML = '<option value="">Select equipment...</option>' +
+                    equipment.map(eq => `<option value="${eq.id}">${eq.name} (${eq.type} - ${eq.capacity} ${eq.units})</option>`).join('');
+            }
+
+            if (storageSelect) {
+                const storages = await FirebaseFarm.getStorages(farm.id);
+                storageSelect.innerHTML = '<option value="">Select storage...</option>' +
+                    storages.map(s => `<option value="${s.id}">${s.name}${s.source ? ' (' + s.source + ')' : ''} - ${s.capacity} ${s.units}</option>`).join('');
+            }
+        } catch (e) {
+            console.error('Error populating setup dropdowns:', e);
         }
     },
 
     hideAdminButton() {
         const btn = document.getElementById('admin-panel-btn');
         if (btn) btn.classList.add('hidden');
+        const sidebarBtn = document.getElementById('sidebar-admin-panel');
+        if (sidebarBtn) sidebarBtn.classList.add('hidden');
+    },
+
+    setupSidebar() {
+        // Sidebar nav items with data-sidebar-screen
+        document.querySelectorAll('[data-sidebar-screen]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.showScreen(btn.dataset.sidebarScreen);
+            });
+        });
+
+        // Special sidebar buttons
+        const sidebarLoadPrior = document.getElementById('sidebar-load-prior');
+        if (sidebarLoadPrior) {
+            sidebarLoadPrior.addEventListener('click', () => this.showScreen('load-screen'));
+        }
+
+        const sidebarPastRecords = document.getElementById('sidebar-past-records');
+        if (sidebarPastRecords) {
+            sidebarPastRecords.addEventListener('click', () => this.showScreen('past-records-screen'));
+        }
+
+        const sidebarFarmProfile = document.getElementById('sidebar-farm-profile');
+        if (sidebarFarmProfile) {
+            sidebarFarmProfile.addEventListener('click', () => this.showScreen('farm-profile-screen'));
+        }
+
+        const sidebarAdmin = document.getElementById('sidebar-admin-panel');
+        if (sidebarAdmin) {
+            sidebarAdmin.addEventListener('click', () => {
+                if (typeof AdminPanel !== 'undefined') AdminPanel.loadDashboard();
+                this.showScreen('admin-dashboard-screen');
+            });
+        }
+
+        const sidebarLogout = document.getElementById('sidebar-logout-btn');
+        if (sidebarLogout) {
+            sidebarLogout.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to logout?')) {
+                    const authHandler = window.FirebaseAuth || Auth;
+                    await authHandler.logout();
+                    this.showScreen('login-screen');
+                }
+            });
+        }
     }
 };
 
