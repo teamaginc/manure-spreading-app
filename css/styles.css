@@ -1318,19 +1318,24 @@ input[type="number"] {
         margin-bottom: 24px;
     }
 
-    /* Desktop farm map container */
+    /* Desktop farm map container - fills entire menu screen */
     body.has-sidebar #desktop-farm-map {
         display: none;
         position: absolute;
         top: 0;
         left: 0;
-        right: 0;
-        bottom: 0;
+        width: 100%;
+        height: 100%;
         z-index: 0;
     }
 
     body.has-sidebar #desktop-farm-map.active {
         display: block;
+    }
+
+    /* Ensure menu screen is positioned for absolute children */
+    body.has-sidebar #menu-screen {
+        position: relative;
     }
 
     /* When farm map is active, hide background image and subtitle */
