@@ -244,51 +244,55 @@ const PastRecords = {
         return { lat: toDeg(lat2), lng: toDeg(lng2) };
     },
 
-    // Draw swath path with circles and segments
+    // Draw swath path as a single polygon for uniform shading
     drawSwathPath(log, color) {
         const spreadWidth = log.spreadWidth || 50;
         const radiusMeters = this.feetToMeters(spreadWidth) / 2;
         const swathColor = this.manureColor;
 
+        if (log.path.length < 2) return;
+
+        // Build left and right edges of the swath polygon
+        const leftEdge = [];
+        const rightEdge = [];
+
         for (let i = 0; i < log.path.length; i++) {
             const point = log.path[i];
+            let bearing;
 
-            // Add circle at each point
-            const circle = L.circle([point.lat, point.lng], {
-                radius: radiusMeters,
-                color: swathColor,
-                weight: 0,
-                fillColor: swathColor,
-                fillOpacity: 0.25
-            }).addTo(this.map);
-            this.pathLayers.push(circle);
-
-            // Add segment between points
-            if (i > 0) {
-                const prevPoint = log.path[i - 1];
-                const bearing = this.calculateBearing(prevPoint.lat, prevPoint.lng, point.lat, point.lng);
-                const perpLeft = (bearing + 270) % 360;
-                const perpRight = (bearing + 90) % 360;
-
-                const p1 = this.destinationPoint(prevPoint.lat, prevPoint.lng, perpLeft, radiusMeters);
-                const p2 = this.destinationPoint(prevPoint.lat, prevPoint.lng, perpRight, radiusMeters);
-                const p3 = this.destinationPoint(point.lat, point.lng, perpRight, radiusMeters);
-                const p4 = this.destinationPoint(point.lat, point.lng, perpLeft, radiusMeters);
-
-                const polygon = L.polygon([
-                    [p1.lat, p1.lng],
-                    [p2.lat, p2.lng],
-                    [p3.lat, p3.lng],
-                    [p4.lat, p4.lng]
-                ], {
-                    color: swathColor,
-                    weight: 0,
-                    fillColor: swathColor,
-                    fillOpacity: 0.25
-                }).addTo(this.map);
-                this.pathLayers.push(polygon);
+            if (i === 0) {
+                // First point: use bearing to next point
+                bearing = this.calculateBearing(point.lat, point.lng, log.path[i + 1].lat, log.path[i + 1].lng);
+            } else if (i === log.path.length - 1) {
+                // Last point: use bearing from previous point
+                bearing = this.calculateBearing(log.path[i - 1].lat, log.path[i - 1].lng, point.lat, point.lng);
+            } else {
+                // Middle points: average bearing for smooth corners
+                const bearingIn = this.calculateBearing(log.path[i - 1].lat, log.path[i - 1].lng, point.lat, point.lng);
+                const bearingOut = this.calculateBearing(point.lat, point.lng, log.path[i + 1].lat, log.path[i + 1].lng);
+                bearing = this.averageBearing(bearingIn, bearingOut);
             }
+
+            const perpLeft = (bearing + 270) % 360;
+            const perpRight = (bearing + 90) % 360;
+
+            const leftPoint = this.destinationPoint(point.lat, point.lng, perpLeft, radiusMeters);
+            const rightPoint = this.destinationPoint(point.lat, point.lng, perpRight, radiusMeters);
+
+            leftEdge.push([leftPoint.lat, leftPoint.lng]);
+            rightEdge.push([rightPoint.lat, rightPoint.lng]);
         }
+
+        // Combine edges into a single polygon (left edge forward, right edge backward)
+        const polygonCoords = [...leftEdge, ...rightEdge.reverse()];
+
+        const polygon = L.polygon(polygonCoords, {
+            color: swathColor,
+            weight: 0,
+            fillColor: swathColor,
+            fillOpacity: 0.25
+        }).addTo(this.map);
+        this.pathLayers.push(polygon);
 
         // Add center line
         const coords = log.path.map(p => [p.lat, p.lng]);
@@ -298,6 +302,15 @@ const PastRecords = {
             opacity: 0.8
         }).addTo(this.map);
         this.pathLayers.push(polyline);
+    },
+
+    // Average two bearings (handles wrap-around at 360)
+    averageBearing(b1, b2) {
+        const toRad = x => x * Math.PI / 180;
+        const toDeg = x => x * 180 / Math.PI;
+        const x = Math.cos(toRad(b1)) + Math.cos(toRad(b2));
+        const y = Math.sin(toRad(b1)) + Math.sin(toRad(b2));
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
     },
 
     async loadData() {
