@@ -244,44 +244,66 @@ const PastRecords = {
         return { lat: toDeg(lat2), lng: toDeg(lng2) };
     },
 
-    // Draw swath path as a single polygon for uniform shading
+    // Draw swath path as a single polygon with proper buffered edges
     drawSwathPath(log, color) {
         const spreadWidth = log.spreadWidth || 50;
-        const radiusMeters = this.feetToMeters(spreadWidth) / 2;
+        const bufferDist = this.feetToMeters(spreadWidth) / 2;
         const swathColor = this.manureColor;
 
         if (log.path.length < 2) return;
 
-        // Build left and right edges of the swath polygon
-        const leftEdge = [];
-        const rightEdge = [];
+        // Build offset lines for each segment
+        const leftLines = [];
+        const rightLines = [];
 
-        for (let i = 0; i < log.path.length; i++) {
-            const point = log.path[i];
-            let bearing;
-
-            if (i === 0) {
-                // First point: use bearing to next point
-                bearing = this.calculateBearing(point.lat, point.lng, log.path[i + 1].lat, log.path[i + 1].lng);
-            } else if (i === log.path.length - 1) {
-                // Last point: use bearing from previous point
-                bearing = this.calculateBearing(log.path[i - 1].lat, log.path[i - 1].lng, point.lat, point.lng);
-            } else {
-                // Middle points: average bearing for smooth corners
-                const bearingIn = this.calculateBearing(log.path[i - 1].lat, log.path[i - 1].lng, point.lat, point.lng);
-                const bearingOut = this.calculateBearing(point.lat, point.lng, log.path[i + 1].lat, log.path[i + 1].lng);
-                bearing = this.averageBearing(bearingIn, bearingOut);
-            }
-
+        for (let i = 0; i < log.path.length - 1; i++) {
+            const p1 = log.path[i];
+            const p2 = log.path[i + 1];
+            const bearing = this.calculateBearing(p1.lat, p1.lng, p2.lat, p2.lng);
             const perpLeft = (bearing + 270) % 360;
             const perpRight = (bearing + 90) % 360;
 
-            const leftPoint = this.destinationPoint(point.lat, point.lng, perpLeft, radiusMeters);
-            const rightPoint = this.destinationPoint(point.lat, point.lng, perpRight, radiusMeters);
-
-            leftEdge.push([leftPoint.lat, leftPoint.lng]);
-            rightEdge.push([rightPoint.lat, rightPoint.lng]);
+            // Offset both endpoints of this segment
+            leftLines.push({
+                start: this.destinationPoint(p1.lat, p1.lng, perpLeft, bufferDist),
+                end: this.destinationPoint(p2.lat, p2.lng, perpLeft, bufferDist)
+            });
+            rightLines.push({
+                start: this.destinationPoint(p1.lat, p1.lng, perpRight, bufferDist),
+                end: this.destinationPoint(p2.lat, p2.lng, perpRight, bufferDist)
+            });
         }
+
+        // Build the polygon edges using line intersections at corners
+        const leftEdge = [];
+        const rightEdge = [];
+
+        // First point: squared end
+        leftEdge.push([leftLines[0].start.lat, leftLines[0].start.lng]);
+        rightEdge.push([rightLines[0].start.lat, rightLines[0].start.lng]);
+
+        // Middle points: intersect adjacent offset lines
+        for (let i = 0; i < leftLines.length - 1; i++) {
+            const leftInt = this.lineIntersection(leftLines[i], leftLines[i + 1]);
+            const rightInt = this.lineIntersection(rightLines[i], rightLines[i + 1]);
+
+            if (leftInt) {
+                leftEdge.push([leftInt.lat, leftInt.lng]);
+            } else {
+                leftEdge.push([leftLines[i].end.lat, leftLines[i].end.lng]);
+            }
+
+            if (rightInt) {
+                rightEdge.push([rightInt.lat, rightInt.lng]);
+            } else {
+                rightEdge.push([rightLines[i].end.lat, rightLines[i].end.lng]);
+            }
+        }
+
+        // Last point: squared end
+        const lastIdx = leftLines.length - 1;
+        leftEdge.push([leftLines[lastIdx].end.lat, leftLines[lastIdx].end.lng]);
+        rightEdge.push([rightLines[lastIdx].end.lat, rightLines[lastIdx].end.lng]);
 
         // Combine edges into a single polygon (left edge forward, right edge backward)
         const polygonCoords = [...leftEdge, ...rightEdge.reverse()];
@@ -304,13 +326,22 @@ const PastRecords = {
         this.pathLayers.push(polyline);
     },
 
-    // Average two bearings (handles wrap-around at 360)
-    averageBearing(b1, b2) {
-        const toRad = x => x * Math.PI / 180;
-        const toDeg = x => x * 180 / Math.PI;
-        const x = Math.cos(toRad(b1)) + Math.cos(toRad(b2));
-        const y = Math.sin(toRad(b1)) + Math.sin(toRad(b2));
-        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    // Find intersection point of two line segments (extended as infinite lines)
+    lineIntersection(line1, line2) {
+        const x1 = line1.start.lng, y1 = line1.start.lat;
+        const x2 = line1.end.lng, y2 = line1.end.lat;
+        const x3 = line2.start.lng, y3 = line2.start.lat;
+        const x4 = line2.end.lng, y4 = line2.end.lat;
+
+        const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (Math.abs(denom) < 1e-10) return null; // Lines are parallel
+
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+
+        return {
+            lat: y1 + t * (y2 - y1),
+            lng: x1 + t * (x2 - x1)
+        };
     },
 
     async loadData() {
