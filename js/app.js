@@ -743,10 +743,9 @@ const App = {
 
                 const layer = L.geoJSON(field.geojson, {
                     style: {
-                        color: '#DAA520',
+                        color: '#39FF14',
                         weight: 3,
-                        fillColor: '#DAA520',
-                        fillOpacity: 0.25
+                        fillOpacity: 0
                     }
                 }).addTo(this.desktopFarmMap);
 
