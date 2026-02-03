@@ -17,6 +17,9 @@ const PastRecords = {
     // Color palette for spreading paths
     pathColors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'],
 
+    // Default manure color for swaths
+    manureColor: '#5d3000',
+
     async init() {
         if (this.isInitialized && this.map) {
             this.map.invalidateSize();
@@ -201,18 +204,100 @@ const PastRecords = {
         const log = this.allLogs.find(l => l.id === logId);
         if (!log) return;
 
-        // Clear and draw this log's path
+        // Clear and draw this log's path with swath
         this.clearPaths();
         if (log.path && log.path.length >= 2) {
+            this.drawSwathPath(log, '#FF6B6B');
             const coords = log.path.map(p => [p.lat, p.lng]);
-            const polyline = L.polyline(coords, {
-                color: '#FF6B6B',
-                weight: 4,
-                opacity: 0.9
-            }).addTo(this.map);
-            this.pathLayers.push(polyline);
-            this.map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+            this.map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
         }
+    },
+
+    // Helper: convert feet to meters
+    feetToMeters(feet) {
+        return feet * 0.3048;
+    },
+
+    // Helper: calculate bearing between two points
+    calculateBearing(lat1, lng1, lat2, lng2) {
+        const toRad = x => x * Math.PI / 180;
+        const toDeg = x => x * 180 / Math.PI;
+        const dLng = toRad(lng2 - lng1);
+        const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+        const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+                  Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    },
+
+    // Helper: get destination point from start, bearing, and distance
+    destinationPoint(lat, lng, bearing, distanceMeters) {
+        const R = 6371000;
+        const toRad = x => x * Math.PI / 180;
+        const toDeg = x => x * 180 / Math.PI;
+        const brng = toRad(bearing);
+        const lat1 = toRad(lat);
+        const lng1 = toRad(lng);
+        const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distanceMeters / R) +
+                    Math.cos(lat1) * Math.sin(distanceMeters / R) * Math.cos(brng));
+        const lng2 = lng1 + Math.atan2(Math.sin(brng) * Math.sin(distanceMeters / R) * Math.cos(lat1),
+                    Math.cos(distanceMeters / R) - Math.sin(lat1) * Math.sin(lat2));
+        return { lat: toDeg(lat2), lng: toDeg(lng2) };
+    },
+
+    // Draw swath path with circles and segments
+    drawSwathPath(log, color) {
+        const spreadWidth = log.spreadWidth || 50;
+        const radiusMeters = this.feetToMeters(spreadWidth) / 2;
+        const swathColor = this.manureColor;
+
+        for (let i = 0; i < log.path.length; i++) {
+            const point = log.path[i];
+
+            // Add circle at each point
+            const circle = L.circle([point.lat, point.lng], {
+                radius: radiusMeters,
+                color: swathColor,
+                weight: 0,
+                fillColor: swathColor,
+                fillOpacity: 0.25
+            }).addTo(this.map);
+            this.pathLayers.push(circle);
+
+            // Add segment between points
+            if (i > 0) {
+                const prevPoint = log.path[i - 1];
+                const bearing = this.calculateBearing(prevPoint.lat, prevPoint.lng, point.lat, point.lng);
+                const perpLeft = (bearing + 270) % 360;
+                const perpRight = (bearing + 90) % 360;
+
+                const p1 = this.destinationPoint(prevPoint.lat, prevPoint.lng, perpLeft, radiusMeters);
+                const p2 = this.destinationPoint(prevPoint.lat, prevPoint.lng, perpRight, radiusMeters);
+                const p3 = this.destinationPoint(point.lat, point.lng, perpRight, radiusMeters);
+                const p4 = this.destinationPoint(point.lat, point.lng, perpLeft, radiusMeters);
+
+                const polygon = L.polygon([
+                    [p1.lat, p1.lng],
+                    [p2.lat, p2.lng],
+                    [p3.lat, p3.lng],
+                    [p4.lat, p4.lng]
+                ], {
+                    color: swathColor,
+                    weight: 0,
+                    fillColor: swathColor,
+                    fillOpacity: 0.25
+                }).addTo(this.map);
+                this.pathLayers.push(polygon);
+            }
+        }
+
+        // Add center line
+        const coords = log.path.map(p => [p.lat, p.lng]);
+        const polyline = L.polyline(coords, {
+            color: color,
+            weight: 2,
+            opacity: 0.8
+        }).addTo(this.map);
+        this.pathLayers.push(polyline);
     },
 
     async loadData() {
@@ -261,10 +346,9 @@ const PastRecords = {
 
             const layer = L.geoJSON(field.geojson, {
                 style: {
-                    color: '#DAA520',
+                    color: '#39FF14',
                     weight: 3,
-                    fillColor: '#DAA520',
-                    fillOpacity: 0.25
+                    fillOpacity: 0
                 }
             }).addTo(this.map);
 
@@ -380,15 +464,7 @@ const PastRecords = {
             if (!log.path || log.path.length < 2) return;
 
             const color = this.pathColors[index % this.pathColors.length];
-            const coords = log.path.map(p => [p.lat, p.lng]);
-
-            const polyline = L.polyline(coords, {
-                color: color,
-                weight: 3,
-                opacity: 0.8
-            }).addTo(this.map);
-
-            this.pathLayers.push(polyline);
+            this.drawSwathPath(log, color);
         });
     },
 
