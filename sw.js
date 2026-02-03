@@ -1,6 +1,6 @@
-// Service Worker for offline caching
+// Service Worker for offline caching - Network-first strategy
 
-const CACHE_NAME = 'teamag-manure-v1';
+const CACHE_NAME = 'teamag-manure-v2';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
@@ -13,6 +13,11 @@ const ASSETS_TO_CACHE = [
     '/js/export.js',
     '/manifest.json',
     '/assets/tractor-icon.svg',
+    '/assets/ManureSpreader.png'
+];
+
+// CDN assets can be cache-first (they're versioned)
+const CDN_ASSETS = [
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
@@ -25,10 +30,11 @@ self.addEventListener('install', (event) => {
         caches.open(CACHE_NAME)
             .then((cache) => {
                 console.log('Service Worker: Caching files');
-                return cache.addAll(ASSETS_TO_CACHE);
+                // Cache CDN assets
+                return cache.addAll(CDN_ASSETS);
             })
             .then(() => {
-                console.log('Service Worker: All files cached');
+                console.log('Service Worker: CDN assets cached');
                 return self.skipWaiting();
             })
             .catch((error) => {
@@ -60,54 +66,118 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Check if URL is an app file (HTML, JS, CSS)
+function isAppFile(url) {
+    const pathname = new URL(url).pathname;
+    return pathname.endsWith('.html') ||
+           pathname.endsWith('.js') ||
+           pathname.endsWith('.css') ||
+           pathname === '/' ||
+           pathname === '';
+}
+
+// Check if URL is a CDN asset
+function isCDNAsset(url) {
+    return url.includes('unpkg.com') ||
+           url.includes('cdnjs.cloudflare.com');
+}
+
+// Check if URL is a map tile
+function isMapTile(url) {
+    return url.includes('tile.openstreetmap.org') ||
+           url.includes('arcgisonline.com');
+}
+
+// Fetch event - network-first for app files, cache-first for CDN/tiles
 self.addEventListener('fetch', (event) => {
     // Skip non-GET requests
     if (event.request.method !== 'GET') {
         return;
     }
 
-    // Skip map tile requests (let them go to network)
-    if (event.request.url.includes('tile.openstreetmap.org')) {
+    const url = event.request.url;
+
+    // Map tiles: network-first with no caching (they're large)
+    if (isMapTile(url)) {
         event.respondWith(
             fetch(event.request)
                 .catch(() => {
-                    // Return a simple error response for failed tile requests
                     return new Response('', { status: 404 });
                 })
         );
         return;
     }
 
-    event.respondWith(
-        caches.match(event.request)
-            .then((cachedResponse) => {
-                if (cachedResponse) {
-                    // Return cached version
-                    return cachedResponse;
-                }
-
-                // Not in cache, fetch from network
-                return fetch(event.request)
-                    .then((networkResponse) => {
-                        // Check if valid response
-                        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+    // CDN assets: cache-first (versioned URLs don't change)
+    if (isCDNAsset(url)) {
+        event.respondWith(
+            caches.match(event.request)
+                .then((cachedResponse) => {
+                    if (cachedResponse) {
+                        return cachedResponse;
+                    }
+                    return fetch(event.request)
+                        .then((networkResponse) => {
+                            if (networkResponse && networkResponse.status === 200) {
+                                const responseToCache = networkResponse.clone();
+                                caches.open(CACHE_NAME)
+                                    .then((cache) => cache.put(event.request, responseToCache));
+                            }
                             return networkResponse;
-                        }
+                        });
+                })
+        );
+        return;
+    }
 
-                        // Clone and cache the response
+    // App files (HTML, JS, CSS): NETWORK-FIRST
+    // Always try network first to get latest deployments
+    if (isAppFile(url)) {
+        event.respondWith(
+            fetch(event.request)
+                .then((networkResponse) => {
+                    // Cache the fresh response for offline use
+                    if (networkResponse && networkResponse.status === 200) {
                         const responseToCache = networkResponse.clone();
                         caches.open(CACHE_NAME)
-                            .then((cache) => {
-                                cache.put(event.request, responseToCache);
-                            });
+                            .then((cache) => cache.put(event.request, responseToCache));
+                    }
+                    return networkResponse;
+                })
+                .catch(() => {
+                    // Network failed, try cache for offline support
+                    return caches.match(event.request)
+                        .then((cachedResponse) => {
+                            if (cachedResponse) {
+                                return cachedResponse;
+                            }
+                            // If requesting a page, serve index.html from cache
+                            if (event.request.destination === 'document') {
+                                return caches.match('/index.html');
+                            }
+                            return new Response('Offline', { status: 503 });
+                        });
+                })
+        );
+        return;
+    }
 
-                        return networkResponse;
-                    })
-                    .catch(() => {
-                        // Network failed, return offline fallback if available
-                        if (event.request.destination === 'document') {
-                            return caches.match('/index.html');
+    // All other assets: network-first with cache fallback
+    event.respondWith(
+        fetch(event.request)
+            .then((networkResponse) => {
+                if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME)
+                        .then((cache) => cache.put(event.request, responseToCache));
+                }
+                return networkResponse;
+            })
+            .catch(() => {
+                return caches.match(event.request)
+                    .then((cachedResponse) => {
+                        if (cachedResponse) {
+                            return cachedResponse;
                         }
                         return new Response('Offline', { status: 503 });
                     });

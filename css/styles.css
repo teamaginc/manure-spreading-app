@@ -1158,55 +1158,14 @@ input[type="number"] {
     color: #666;
 }
 
-/* Desktop Dashboard (hidden on mobile) */
-.desktop-dashboard {
+/* Desktop subtitle (hidden on mobile) */
+#desktop-subtitle {
     display: none;
 }
 
-.dashboard-subtitle {
-    color: #666;
-    text-align: center;
-    margin-bottom: 24px;
-    font-size: 1rem;
-}
-
-.dashboard-cards {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    max-width: 500px;
-    margin: 0 auto;
-}
-
-.dashboard-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 24px 16px;
-    text-align: center;
-    cursor: pointer;
-    transition: box-shadow 0.2s, transform 0.1s;
-}
-
-.dashboard-card:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    transform: translateY(-2px);
-}
-
-.dashboard-card:active {
-    transform: scale(0.98);
-}
-
-.dashboard-card-icon {
-    display: block;
-    font-size: 2rem;
-    margin-bottom: 8px;
-}
-
-.dashboard-card-label {
-    font-weight: 600;
-    color: var(--text-dark);
-    font-size: 1rem;
+/* Desktop farm map container (hidden on mobile, shown when fields exist) */
+#desktop-farm-map {
+    display: none;
 }
 
 /* Desktop Sidebar Layout */
@@ -1304,11 +1263,6 @@ input[type="number"] {
         margin-right: auto;
     }
 
-    /* Show desktop dashboard cards */
-    body.has-sidebar .desktop-dashboard {
-        display: block;
-    }
-
     /* Hide redundant menu buttons on desktop — sidebar handles nav */
     body.has-sidebar #menu-screen .menu-buttons {
         display: none;
@@ -1318,16 +1272,85 @@ input[type="number"] {
         display: none;
     }
 
-    /* Desktop welcome screen becomes a dashboard landing */
+    /* Desktop menu screen with background image */
+    body.has-sidebar #menu-screen {
+        background-image: url('../assets/ManureSpreader.png');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        position: relative;
+    }
+
+    /* Dark overlay for text readability */
+    body.has-sidebar #menu-screen::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 0;
+    }
+
     body.has-sidebar #menu-screen .screen-content {
         justify-content: flex-start;
-        align-items: stretch;
-        padding-top: 48px;
+        align-items: center;
+        padding-top: 80px;
+        position: relative;
+        z-index: 1;
     }
 
     body.has-sidebar #menu-screen .welcome-text {
-        font-size: 2rem;
+        font-size: 2.5rem;
         margin-bottom: 16px;
+        color: #fff;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Desktop subtitle styling */
+    body.has-sidebar #desktop-subtitle {
+        display: block;
+        color: #fff;
+        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.7);
+        font-size: 1.2rem;
+        text-align: center;
+        margin-bottom: 24px;
+    }
+
+    /* Desktop farm map container */
+    body.has-sidebar #desktop-farm-map {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 0;
+    }
+
+    body.has-sidebar #desktop-farm-map.active {
+        display: block;
+    }
+
+    /* When farm map is active, hide background image and subtitle */
+    body.has-sidebar #menu-screen.has-farm-map {
+        background-image: none;
+    }
+
+    body.has-sidebar #menu-screen.has-farm-map::before {
+        display: none;
+    }
+
+    body.has-sidebar #menu-screen.has-farm-map #desktop-subtitle {
+        display: none;
+    }
+
+    body.has-sidebar #menu-screen.has-farm-map .welcome-text {
+        color: #fff;
+        background: rgba(0, 0, 0, 0.6);
+        padding: 12px 24px;
+        border-radius: 8px;
     }
 
     /* Hide back buttons on desktop — sidebar handles nav */

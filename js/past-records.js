@@ -4,12 +4,17 @@ const PastRecords = {
     map: null,
     isInitialized: false,
     fieldLayers: [],
+    pathLayers: [],
     allLogs: [],
     allFields: [],
     farmMembers: [],
     selectedField: null,
+    selectedFieldLogs: [],
     adminFarmId: null,  // Set by AdminPanel to scope fields to a specific farm
     adminUserId: null,  // Set by AdminPanel to scope logs to a specific user
+
+    // Color palette for spreading paths
+    pathColors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'],
 
     async init() {
         if (this.isInitialized && this.map) {
@@ -184,7 +189,35 @@ const PastRecords = {
     onFieldClick(field) {
         this.selectedField = field;
         const logs = this.getLogsForField(field);
+        this.selectedFieldLogs = logs;
+
+        // Clear previous paths and draw new ones
+        this.clearPaths();
+        this.drawLogPaths(logs);
+
         this.showRecordPanel(field, logs);
+    },
+
+    drawLogPaths(logs) {
+        logs.forEach((log, index) => {
+            if (!log.path || log.path.length < 2) return;
+
+            const color = this.pathColors[index % this.pathColors.length];
+            const coords = log.path.map(p => [p.lat, p.lng]);
+
+            const polyline = L.polyline(coords, {
+                color: color,
+                weight: 3,
+                opacity: 0.8
+            }).addTo(this.map);
+
+            this.pathLayers.push(polyline);
+        });
+    },
+
+    clearPaths() {
+        this.pathLayers.forEach(layer => this.map.removeLayer(layer));
+        this.pathLayers = [];
     },
 
     showRecordPanel(field, logs) {
@@ -245,12 +278,48 @@ const PastRecords = {
             });
         }
 
+        // Add export controls at the bottom
+        html += `<div style="padding:12px 16px;border-top:1px solid #ddd;">
+            <div style="display:flex;gap:8px;align-items:center;">
+                <select id="field-export-format" style="flex:1;padding:10px;border-radius:6px;border:1px solid #ddd;font-size:0.9rem;">
+                    <option value="csv">CSV</option>
+                    <option value="kmz">KMZ</option>
+                    <option value="png">PNG</option>
+                </select>
+                <button class="btn btn-primary" onclick="PastRecords.exportFieldRecords()" style="padding:10px 16px;font-size:0.9rem;">Export Field Records</button>
+            </div>
+        </div>`;
+
         content.innerHTML = html;
         panel.classList.remove('hidden');
     },
 
+    async exportFieldRecords() {
+        if (!this.selectedFieldLogs || this.selectedFieldLogs.length === 0) {
+            alert('No records to export for this field.');
+            return;
+        }
+
+        const formatSelect = document.getElementById('field-export-format');
+        const format = formatSelect ? formatSelect.value : 'csv';
+        const fieldName = this.selectedField?.name || 'field';
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `manure-spreading-${fieldName.replace(/\s+/g, '-')}-${date}`;
+
+        try {
+            const result = await ExportManager.shareOrDownload(this.selectedFieldLogs, filename, format, true);
+            if (result.method === 'download') {
+                alert(`Downloaded ${this.selectedFieldLogs.length} record(s) as ${format.toUpperCase()} file.`);
+            }
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert('Failed to export records. Please try again.');
+        }
+    },
+
     hideRecordPanel() {
         document.getElementById('record-panel').classList.add('hidden');
+        this.clearPaths();
     },
 
     editRecord(logId) {
@@ -268,8 +337,10 @@ const PastRecords = {
         }
         this.isInitialized = false;
         this.fieldLayers = [];
+        this.pathLayers = [];
         this.allLogs = [];
         this.allFields = [];
+        this.selectedFieldLogs = [];
         this.adminFarmId = null;
         this.adminUserId = null;
     }

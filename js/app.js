@@ -110,9 +110,16 @@ const App = {
             });
         }
 
-        // Setup sidebar navigation and desktop dashboard
+        // Setup sidebar navigation
         this.setupSidebar();
-        this.setupDesktopDashboard();
+
+        // Setup past records export all button
+        const exportAllBtn = document.getElementById('past-records-export-all');
+        if (exportAllBtn) {
+            exportAllBtn.addEventListener('click', () => {
+                ExportManager.exportAllLogs();
+            });
+        }
 
         // Listen for Firebase auth state changes
         window.addEventListener('authStateChanged', async (event) => {
@@ -177,7 +184,17 @@ const App = {
             if (screenId === 'map-screen') {
                 MapManager.init();
                 MapManager.invalidateSize();
-            } else if (screenId === 'export-screen') {
+            } else if (screenId === 'menu-screen') {
+                // On desktop, load farm map if user has fields
+                if (window.innerWidth >= 768) {
+                    this.loadDesktopFarmMap();
+                }
+            } else if (screenId !== 'menu-screen') {
+                // Destroy desktop farm map when leaving menu screen
+                this.destroyDesktopFarmMap();
+            }
+
+            if (screenId === 'export-screen') {
                 ExportManager.renderLogsList();
             } else if (screenId === 'settings-screen') {
                 this.loadSettings();
@@ -662,18 +679,126 @@ const App = {
         if (sidebarBtn) sidebarBtn.classList.add('hidden');
     },
 
-    setupDesktopDashboard() {
-        document.querySelectorAll('.dashboard-card[data-sidebar-screen]').forEach(card => {
-            card.addEventListener('click', () => this.showScreen(card.dataset.sidebarScreen));
-        });
-        const pastRecordsCard = document.getElementById('dashboard-past-records');
-        if (pastRecordsCard) {
-            pastRecordsCard.addEventListener('click', () => this.showScreen('past-records-screen'));
+    desktopFarmMap: null,
+    desktopFarmMapLayers: [],
+
+    async loadDesktopFarmMap() {
+        const menuScreen = document.getElementById('menu-screen');
+        const mapContainer = document.getElementById('desktop-farm-map');
+        const subtitle = document.getElementById('desktop-subtitle');
+
+        if (!mapContainer || !menuScreen) return;
+
+        try {
+            const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
+            if (!user || !window.FirebaseFarm) {
+                // No user or Firebase not available - show background + subtitle
+                menuScreen.classList.remove('has-farm-map');
+                mapContainer.classList.remove('active');
+                return;
+            }
+
+            const farm = await FirebaseFarm.getFarmByUser(user.uid);
+            if (!farm) {
+                // No farm - show background + subtitle
+                menuScreen.classList.remove('has-farm-map');
+                mapContainer.classList.remove('active');
+                return;
+            }
+
+            const fields = await FirebaseFarm.getFarmFields(farm.id);
+
+            if (!fields || fields.length === 0) {
+                // No fields - show background + subtitle
+                menuScreen.classList.remove('has-farm-map');
+                mapContainer.classList.remove('active');
+                return;
+            }
+
+            // Has fields - show the map
+            menuScreen.classList.add('has-farm-map');
+            mapContainer.classList.add('active');
+
+            // Initialize or update the map
+            if (!this.desktopFarmMap) {
+                this.desktopFarmMap = L.map('desktop-farm-map', {
+                    zoomControl: true,
+                    attributionControl: false
+                }).setView([43.0, -89.4], 15);
+
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    maxZoom: 19,
+                    attribution: 'Tiles &copy; Esri'
+                }).addTo(this.desktopFarmMap);
+            }
+
+            // Clear existing layers
+            this.desktopFarmMapLayers.forEach(layer => this.desktopFarmMap.removeLayer(layer));
+            this.desktopFarmMapLayers = [];
+
+            // Add field boundaries
+            let bounds = null;
+            fields.forEach(field => {
+                if (!field.geojson) return;
+
+                const layer = L.geoJSON(field.geojson, {
+                    style: {
+                        color: '#DAA520',
+                        weight: 3,
+                        fillColor: '#DAA520',
+                        fillOpacity: 0.25
+                    }
+                }).addTo(this.desktopFarmMap);
+
+                this.desktopFarmMapLayers.push(layer);
+
+                // Add label
+                const center = layer.getBounds().getCenter();
+                const label = L.tooltip({
+                    permanent: true,
+                    direction: 'center',
+                    className: 'field-label-tooltip'
+                }).setContent(field.name || 'Unnamed').setLatLng(center);
+                this.desktopFarmMap.addLayer(label);
+                this.desktopFarmMapLayers.push(label);
+
+                if (!bounds) {
+                    bounds = layer.getBounds();
+                } else {
+                    bounds.extend(layer.getBounds());
+                }
+            });
+
+            if (bounds) {
+                this.desktopFarmMap.fitBounds(bounds, { padding: [50, 50] });
+            }
+
+            // Invalidate size after a short delay to ensure container is visible
+            setTimeout(() => {
+                if (this.desktopFarmMap) {
+                    this.desktopFarmMap.invalidateSize();
+                }
+            }, 100);
+
+        } catch (e) {
+            console.error('Error loading desktop farm map:', e);
+            // On error, show background + subtitle
+            menuScreen.classList.remove('has-farm-map');
+            mapContainer.classList.remove('active');
         }
-        const farmProfileCard = document.getElementById('dashboard-farm-profile');
-        if (farmProfileCard) {
-            farmProfileCard.addEventListener('click', () => this.showScreen('farm-profile-screen'));
+    },
+
+    destroyDesktopFarmMap() {
+        if (this.desktopFarmMap) {
+            this.desktopFarmMap.remove();
+            this.desktopFarmMap = null;
         }
+        this.desktopFarmMapLayers = [];
+
+        const menuScreen = document.getElementById('menu-screen');
+        const mapContainer = document.getElementById('desktop-farm-map');
+        if (menuScreen) menuScreen.classList.remove('has-farm-map');
+        if (mapContainer) mapContainer.classList.remove('active');
     },
 
     setupSidebar() {

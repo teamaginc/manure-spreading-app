@@ -25,7 +25,6 @@
             <button class="sidebar-nav-item" data-sidebar-screen="menu-screen"><span class="nav-icon">🏠</span>Home</button>
             <button class="sidebar-nav-item" data-sidebar-screen="setup-screen"><span class="nav-icon">🌾</span>Spread Manure</button>
             <button class="sidebar-nav-item" id="sidebar-load-prior"><span class="nav-icon">📂</span>Continue Prior Session</button>
-            <button class="sidebar-nav-item" data-sidebar-screen="export-screen"><span class="nav-icon">📊</span>Export Data</button>
             <button class="sidebar-nav-item" id="sidebar-past-records"><span class="nav-icon">📋</span>Past Records</button>
             <button class="sidebar-nav-item" data-sidebar-screen="settings-screen"><span class="nav-icon">⚙️</span>App Settings</button>
             <button class="sidebar-nav-item" id="sidebar-farm-profile"><span class="nav-icon">🏡</span>Farm Profile</button>
@@ -89,29 +88,10 @@
         <div class="screen-content">
             <img src="assets/logo-dark.png" alt="TeamAg" class="menu-logo">
             <h1 class="welcome-text">Welcome, <span id="user-name">Farmer</span>!</h1>
+            <p id="desktop-subtitle">Enter farm and equipment profiles to begin.</p>
 
-            <!-- Desktop-only quick actions (visible when sidebar handles main nav) -->
-            <div class="desktop-dashboard">
-                <p class="dashboard-subtitle">Use the sidebar to navigate, or jump to a quick action below.</p>
-                <div class="dashboard-cards">
-                    <div class="dashboard-card" data-sidebar-screen="setup-screen">
-                        <span class="dashboard-card-icon">🌾</span>
-                        <span class="dashboard-card-label">Start Spreading</span>
-                    </div>
-                    <div class="dashboard-card" id="dashboard-past-records">
-                        <span class="dashboard-card-icon">📋</span>
-                        <span class="dashboard-card-label">Past Records</span>
-                    </div>
-                    <div class="dashboard-card" data-sidebar-screen="export-screen">
-                        <span class="dashboard-card-icon">📊</span>
-                        <span class="dashboard-card-label">Export Data</span>
-                    </div>
-                    <div class="dashboard-card" id="dashboard-farm-profile">
-                        <span class="dashboard-card-icon">🏡</span>
-                        <span class="dashboard-card-label">Farm Profile</span>
-                    </div>
-                </div>
-            </div>
+            <!-- Desktop farm map container (shown when fields exist) -->
+            <div id="desktop-farm-map"></div>
 
             <div class="menu-buttons">
                 <button class="btn btn-menu btn-spread" data-screen="setup-screen">
@@ -121,10 +101,6 @@
                 <button class="btn btn-menu btn-load" id="load-prior-btn">
                     <span class="btn-icon">📂</span>
                     <span class="btn-text">Continue Prior Session</span>
-                </button>
-                <button class="btn btn-menu btn-export" data-screen="export-screen">
-                    <span class="btn-icon">📊</span>
-                    <span class="btn-text">Export Data</span>
                 </button>
                 <button class="btn btn-menu btn-past-records" id="past-records-btn">
                     <span class="btn-icon">📋</span>
@@ -736,6 +712,7 @@
         <div class="screen-header">
             <button class="btn-back" id="past-records-back-btn">← Back</button>
             <h2>Past Records</h2>
+            <button class="btn btn-primary" id="past-records-export-all" style="padding:8px 12px;font-size:0.85rem;">Export All</button>
         </div>
         <div id="past-records-map" style="flex:1;width:100%;z-index:1;"></div>
         <div id="record-panel" class="record-panel hidden">
