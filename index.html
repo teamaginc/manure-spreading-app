@@ -714,7 +714,32 @@
             <h2>Past Records</h2>
             <button class="btn btn-primary" id="past-records-export-all" style="padding:8px 12px;font-size:0.85rem;">Export All</button>
         </div>
-        <div id="past-records-map" style="flex:1;width:100%;z-index:1;"></div>
+        <div id="past-records-map" class="past-records-map"></div>
+        <div id="records-table-panel" class="records-table-panel">
+            <p class="records-nav-hint">Navigate records through the table or by selecting a field on the map above.</p>
+            <div class="records-filters">
+                <select id="filter-year"><option value="">All Years</option></select>
+                <select id="filter-season"><option value="">All Seasons</option></select>
+                <select id="filter-field"><option value="">All Fields</option></select>
+                <select id="filter-operator"><option value="">All Operators</option></select>
+            </div>
+            <div class="records-table-container">
+                <table class="records-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Field</th>
+                            <th>Operator</th>
+                            <th>Storage</th>
+                            <th>Target Rate</th>
+                            <th>Calc. Rate</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="records-table-body"></tbody>
+                </table>
+            </div>
+        </div>
         <div id="record-panel" class="record-panel hidden">
             <div id="record-panel-content"></div>
         </div>

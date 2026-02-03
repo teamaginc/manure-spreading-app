@@ -1009,6 +1009,123 @@ input[type="number"] {
     flex-direction: column;
 }
 
+/* Past Records Map - takes 2/3 of space */
+.past-records-map {
+    flex: 2;
+    width: 100%;
+    min-height: 200px;
+    z-index: 1;
+}
+
+/* Records Table Panel - takes 1/3 of space */
+.records-table-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    min-height: 200px;
+    max-height: 40%;
+}
+
+.records-nav-hint {
+    padding: 8px 16px;
+    background: #e8f5e9;
+    color: var(--primary-green);
+    font-size: 0.85rem;
+    text-align: center;
+    margin: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.records-filters {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--bg-light);
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.records-filters select {
+    flex: 1;
+    min-width: 100px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: var(--bg-card);
+}
+
+.records-table-container {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.records-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.records-table th {
+    position: sticky;
+    top: 0;
+    background: var(--primary-green);
+    color: var(--text-light);
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.records-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.records-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.records-table tbody tr:hover {
+    background-color: #f0f7f0;
+}
+
+.records-table tbody tr.selected {
+    background-color: #c8e6c9;
+}
+
+.records-table .btn-edit-small {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    background: var(--primary-green);
+    color: var(--text-light);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.records-table .btn-edit-small:hover {
+    background: var(--primary-green-dark);
+}
+
+/* Mobile: stack filters */
+@media (max-width: 600px) {
+    .records-filters {
+        flex-direction: column;
+    }
+    .records-filters select {
+        width: 100%;
+    }
+    .records-table th,
+    .records-table td {
+        padding: 8px 6px;
+        font-size: 0.8rem;
+    }
+}
+
 .record-panel {
     position: absolute;
     bottom: 0;

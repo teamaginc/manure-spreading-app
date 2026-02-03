@@ -10,6 +10,7 @@ const PastRecords = {
     farmMembers: [],
     selectedField: null,
     selectedFieldLogs: [],
+    selectedLogId: null,
     adminFarmId: null,  // Set by AdminPanel to scope fields to a specific farm
     adminUserId: null,  // Set by AdminPanel to scope logs to a specific user
 
@@ -33,9 +34,185 @@ const PastRecords = {
         }).addTo(this.map);
 
         this.isInitialized = true;
+        this.setupFilterListeners();
 
         await this.loadData();
         this.renderFields();
+        this.populateFilters();
+        this.renderTable();
+    },
+
+    setupFilterListeners() {
+        ['filter-year', 'filter-season', 'filter-field', 'filter-operator'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', () => this.renderTable());
+            }
+        });
+    },
+
+    populateFilters() {
+        const years = new Set();
+        const seasons = new Set();
+        const operators = new Set();
+
+        this.allLogs.forEach(log => {
+            if (log.timestamp) {
+                const d = new Date(log.timestamp);
+                years.add(d.getFullYear());
+                seasons.add(this.getSeasonName(log.timestamp));
+            }
+            if (log.userId) {
+                operators.add(log.userId);
+            }
+        });
+
+        // Populate year filter
+        const yearSelect = document.getElementById('filter-year');
+        if (yearSelect) {
+            yearSelect.innerHTML = '<option value="">All Years</option>';
+            [...years].sort((a, b) => b - a).forEach(y => {
+                yearSelect.innerHTML += `<option value="${y}">${y}</option>`;
+            });
+        }
+
+        // Populate season filter
+        const seasonSelect = document.getElementById('filter-season');
+        if (seasonSelect) {
+            seasonSelect.innerHTML = '<option value="">All Seasons</option>';
+            ['Spring', 'Summer', 'Fall', 'Winter'].forEach(s => {
+                if ([...seasons].some(ss => ss.startsWith(s))) {
+                    seasonSelect.innerHTML += `<option value="${s}">${s}</option>`;
+                }
+            });
+        }
+
+        // Populate field filter
+        const fieldSelect = document.getElementById('filter-field');
+        if (fieldSelect) {
+            fieldSelect.innerHTML = '<option value="">All Fields</option>';
+            this.allFields.forEach(f => {
+                fieldSelect.innerHTML += `<option value="${f.id}">${f.name || 'Unnamed'}</option>`;
+            });
+        }
+
+        // Populate operator filter
+        const operatorSelect = document.getElementById('filter-operator');
+        if (operatorSelect) {
+            operatorSelect.innerHTML = '<option value="">All Operators</option>';
+            [...operators].forEach(uid => {
+                const name = this.getOperatorName(uid);
+                operatorSelect.innerHTML += `<option value="${uid}">${name}</option>`;
+            });
+        }
+    },
+
+    getSeasonName(dateStr) {
+        const d = new Date(dateStr);
+        const month = d.getMonth();
+        if (month >= 2 && month <= 4) return 'Spring';
+        if (month >= 5 && month <= 7) return 'Summer';
+        if (month >= 8 && month <= 10) return 'Fall';
+        return 'Winter';
+    },
+
+    getFieldForLog(log) {
+        if (!log.path || log.path.length === 0) return null;
+        for (const field of this.allFields) {
+            const polygon = this.getPolygonCoords(field);
+            if (polygon.length === 0) continue;
+            if (log.path.some(pt => this.pointInPolygon([pt.lat, pt.lng], polygon))) {
+                return field;
+            }
+        }
+        return null;
+    },
+
+    getFilteredLogs() {
+        const yearFilter = document.getElementById('filter-year')?.value;
+        const seasonFilter = document.getElementById('filter-season')?.value;
+        const fieldFilter = document.getElementById('filter-field')?.value;
+        const operatorFilter = document.getElementById('filter-operator')?.value;
+
+        return this.allLogs.filter(log => {
+            if (yearFilter && log.timestamp) {
+                const year = new Date(log.timestamp).getFullYear();
+                if (year !== parseInt(yearFilter)) return false;
+            }
+            if (seasonFilter && log.timestamp) {
+                const season = this.getSeasonName(log.timestamp);
+                if (season !== seasonFilter) return false;
+            }
+            if (fieldFilter) {
+                const field = this.getFieldForLog(log);
+                if (!field || field.id !== fieldFilter) return false;
+            }
+            if (operatorFilter && log.userId !== operatorFilter) {
+                return false;
+            }
+            return true;
+        });
+    },
+
+    renderTable() {
+        const tbody = document.getElementById('records-table-body');
+        if (!tbody) return;
+
+        const logs = this.getFilteredLogs();
+
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666;padding:24px;">No records found matching filters.</td></tr>';
+            return;
+        }
+
+        // Sort by date descending
+        logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        tbody.innerHTML = logs.map(log => {
+            const date = log.timestamp ? new Date(log.timestamp).toLocaleDateString() : 'N/A';
+            const field = this.getFieldForLog(log);
+            const fieldName = field ? (field.name || 'Unnamed') : 'Unknown';
+            const operator = this.getOperatorName(log.userId);
+            const storage = log.storageName || 'N/A';
+            const targetRate = log.targetRate ? `${log.targetRate}` : '-';
+            const calcRate = log.calculatedRate ? `${log.calculatedRate.toFixed(0)}` : '-';
+
+            return `<tr data-log-id="${log.id}" onclick="PastRecords.onTableRowClick('${log.id}')">
+                <td>${date}</td>
+                <td>${fieldName}</td>
+                <td>${operator}</td>
+                <td>${storage}</td>
+                <td>${targetRate}</td>
+                <td>${calcRate}</td>
+                <td><button class="btn-edit-small" onclick="event.stopPropagation();PastRecords.editRecord('${log.id}')">Edit</button></td>
+            </tr>`;
+        }).join('');
+    },
+
+    onTableRowClick(logId) {
+        // Clear previous selection
+        document.querySelectorAll('#records-table-body tr.selected').forEach(tr => tr.classList.remove('selected'));
+
+        // Select new row
+        const row = document.querySelector(`#records-table-body tr[data-log-id="${logId}"]`);
+        if (row) row.classList.add('selected');
+
+        this.selectedLogId = logId;
+        const log = this.allLogs.find(l => l.id === logId);
+        if (!log) return;
+
+        // Clear and draw this log's path
+        this.clearPaths();
+        if (log.path && log.path.length >= 2) {
+            const coords = log.path.map(p => [p.lat, p.lng]);
+            const polyline = L.polyline(coords, {
+                color: '#FF6B6B',
+                weight: 4,
+                opacity: 0.9
+            }).addTo(this.map);
+            this.pathLayers.push(polyline);
+            this.map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+        }
     },
 
     async loadData() {
@@ -341,6 +518,7 @@ const PastRecords = {
         this.allLogs = [];
         this.allFields = [];
         this.selectedFieldLogs = [];
+        this.selectedLogId = null;
         this.adminFarmId = null;
         this.adminUserId = null;
     }
