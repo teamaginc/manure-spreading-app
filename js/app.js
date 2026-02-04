@@ -423,7 +423,7 @@ const App = {
             SpreadingTracker.equipmentCapacity = equipmentCapacity;
             SpreadingTracker.loadCount = this.loadCount;
 
-            // Attach equipment/storage info to the log
+            // Attach equipment/storage/field info to the log and tracker
             if (SpreadingTracker.currentLog) {
                 SpreadingTracker.currentLog.loadCount = this.loadCount;
                 SpreadingTracker.currentLog.equipmentCapacity = equipmentCapacity;
@@ -441,6 +441,11 @@ const App = {
                     SpreadingTracker.currentLog.fieldName = selectedField.textContent;
                 }
             }
+
+            // Set field info for field crossing detection
+            const fieldId = selectedField?.value || null;
+            const fieldName = selectedField?.value ? selectedField.textContent : null;
+            SpreadingTracker.setFieldInfo(fieldId, fieldName, this.setupMapFields || []);
 
             if (!result.success) {
                 alert('Failed to start GPS tracking: ' + result.error);

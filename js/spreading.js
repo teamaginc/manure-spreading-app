@@ -15,6 +15,12 @@ const SpreadingTracker = {
     totalDistanceMeters: 0,
     equipmentCapacity: null,
     loadCount: 0,
+    // Field tracking
+    currentFieldId: null,
+    currentFieldName: null,
+    availableFields: [],
+    fieldChangePromptShowing: false,
+    pendingFieldChange: null,
 
     async startTracking(tractorColor, manureColor, targetRate, spreadWidth, priorSessionId = null) {
         if (this.isTracking) {
@@ -122,6 +128,9 @@ const SpreadingTracker = {
         const shouldAddPoint = this.shouldAddPoint(latitude, longitude);
 
         if (shouldAddPoint) {
+            // Check for field crossing before adding point
+            this.checkFieldCrossing(latitude, longitude);
+
             // Accumulate distance
             if (this.lastPosition) {
                 const segmentDist = this.calculateDistance(
@@ -271,6 +280,13 @@ const SpreadingTracker = {
             this.currentLog = null;
             this.priorSessionId = null;
 
+            // Reset field tracking
+            this.currentFieldId = null;
+            this.currentFieldName = null;
+            this.availableFields = [];
+            this.fieldChangePromptShowing = false;
+            this.pendingFieldChange = null;
+
             return log;
         } catch (error) {
             console.error('Failed to save spreading log:', error);
@@ -306,5 +322,174 @@ const SpreadingTracker = {
             pointCount: this.currentLog ? this.currentLog.path.length : 0,
             currentSpeed: this.currentSpeed
         };
+    },
+
+    // Field tracking methods
+    setFieldInfo(fieldId, fieldName, availableFields) {
+        this.currentFieldId = fieldId || null;
+        this.currentFieldName = fieldName || null;
+        this.availableFields = availableFields || [];
+    },
+
+    getFieldAtLocation(lat, lng) {
+        for (const field of this.availableFields) {
+            if (!field.geojson) continue;
+            const polygon = this.getPolygonCoords(field);
+            if (polygon.length > 0 && this.pointInPolygon([lat, lng], polygon)) {
+                return field;
+            }
+        }
+        return null;
+    },
+
+    getPolygonCoords(field) {
+        const coords = [];
+        if (!field.geojson) return coords;
+        const features = field.geojson.features || [field.geojson];
+        features.forEach(feature => {
+            const geom = feature.geometry || feature;
+            if (geom.type === 'Polygon') {
+                geom.coordinates[0].forEach(c => coords.push([c[1], c[0]]));
+            } else if (geom.type === 'MultiPolygon') {
+                geom.coordinates.forEach(poly => {
+                    poly[0].forEach(c => coords.push([c[1], c[0]]));
+                });
+            }
+        });
+        return coords;
+    },
+
+    pointInPolygon(point, polygon) {
+        const x = point[0], y = point[1];
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i][0], yi = polygon[i][1];
+            const xj = polygon[j][0], yj = polygon[j][1];
+            const intersect = ((yi > y) !== (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    },
+
+    checkFieldCrossing(lat, lng) {
+        // Skip if no fields, no current field, or already showing prompt
+        if (this.availableFields.length === 0 || this.fieldChangePromptShowing) return;
+
+        const newField = this.getFieldAtLocation(lat, lng);
+
+        // If we're not in any field, or still in the same field, do nothing
+        if (!newField) return;
+        if (this.currentFieldId && newField.id === this.currentFieldId) return;
+
+        // We've entered a different field - show confirmation
+        this.pendingFieldChange = newField;
+        this.showFieldChangeConfirmation(newField);
+    },
+
+    showFieldChangeConfirmation(newField) {
+        this.fieldChangePromptShowing = true;
+
+        // Create modal if it doesn't exist
+        let modal = document.getElementById('field-change-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'field-change-modal';
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content" style="text-align:center;">
+                    <h3 style="margin-bottom:16px;">Field Change Detected</h3>
+                    <p id="field-change-message" style="margin-bottom:20px;"></p>
+                    <div style="display:flex;gap:12px;">
+                        <button class="btn btn-primary" id="confirm-field-change" style="flex:1;">Yes, New Field</button>
+                        <button class="btn btn-secondary" id="reject-field-change" style="flex:1;">No, Stay on Current</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            document.getElementById('confirm-field-change').addEventListener('click', () => {
+                this.handleFieldChangeConfirmed();
+            });
+            document.getElementById('reject-field-change').addEventListener('click', () => {
+                this.handleFieldChangeRejected();
+            });
+        }
+
+        const fieldName = newField.name || 'Unnamed Field';
+        const currentName = this.currentFieldName || 'No Field';
+        document.getElementById('field-change-message').innerHTML =
+            `You've entered <strong>${fieldName}</strong>.<br><br>Start a new spreading record for this field?<br><small>(Currently spreading on: ${currentName})</small>`;
+
+        modal.classList.remove('hidden');
+    },
+
+    async handleFieldChangeConfirmed() {
+        const modal = document.getElementById('field-change-modal');
+        if (modal) modal.classList.add('hidden');
+        this.fieldChangePromptShowing = false;
+
+        if (!this.pendingFieldChange || !this.isTracking) {
+            this.pendingFieldChange = null;
+            return;
+        }
+
+        const newField = this.pendingFieldChange;
+        this.pendingFieldChange = null;
+
+        // Save current log
+        try {
+            if (this.currentLog && this.currentLog.path.length > 0) {
+                this.currentLog.endTime = new Date().toISOString();
+                this.currentLog.totalDistanceMeters = this.totalDistanceMeters;
+                const totalDistanceFeet = this.totalDistanceMeters * 3.28084;
+                const acresCovered = (totalDistanceFeet * this.spreadWidth) / 43560;
+                this.currentLog.acresCovered = acresCovered;
+                this.currentLog.calculatedRate = this.getCalculatedRate();
+
+                const dbHandler = window.FirebaseDB || StorageDB;
+                await dbHandler.saveLog(this.currentLog);
+                console.log('Previous field log saved');
+            }
+        } catch (e) {
+            console.error('Error saving previous field log:', e);
+        }
+
+        // Start new log for new field
+        this.currentFieldId = newField.id;
+        this.currentFieldName = newField.name || 'Unnamed Field';
+        this.totalDistanceMeters = 0;
+        this.lastPosition = null;
+
+        this.currentLog = {
+            id: StorageDB.generateId(),
+            timestamp: new Date().toISOString(),
+            endTime: null,
+            tractorColor: this.tractorColor,
+            manureColor: this.manureColor,
+            targetRate: this.targetRate,
+            spreadWidth: this.spreadWidth,
+            fieldId: newField.id,
+            fieldName: this.currentFieldName,
+            equipmentId: this.currentLog?.equipmentId,
+            equipmentName: this.currentLog?.equipmentName,
+            storageId: this.currentLog?.storageId,
+            storageName: this.currentLog?.storageName,
+            loadCount: this.loadCount,
+            equipmentCapacity: this.equipmentCapacity,
+            path: []
+        };
+
+        // Reset map path for new field
+        MapManager.clearPath();
+        MapManager.startPath(this.manureColor, this.spreadWidth);
+    },
+
+    handleFieldChangeRejected() {
+        const modal = document.getElementById('field-change-modal');
+        if (modal) modal.classList.add('hidden');
+        this.fieldChangePromptShowing = false;
+        this.pendingFieldChange = null;
+        // Continue with current field - no changes needed
     }
 };
