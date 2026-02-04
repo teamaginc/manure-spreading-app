@@ -1318,6 +1318,11 @@ input[type="number"] {
 }
 
 @media (min-width: 768px) {
+    /* Hide mobile-only items on desktop */
+    .mobile-only {
+        display: none !important;
+    }
+
     .app-sidebar {
         display: flex;
         flex-direction: column;
