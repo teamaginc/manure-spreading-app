@@ -169,6 +169,11 @@ const App = {
     },
 
     showScreen(screenId) {
+        // Clean up setup screen when leaving
+        if (this.currentScreen === 'setup-screen' && screenId !== 'setup-screen') {
+            this.cleanupSetupScreen();
+        }
+
         // Hide all screens
         document.querySelectorAll('.screen').forEach(screen => {
             screen.classList.remove('active');
@@ -200,6 +205,14 @@ const App = {
                 this.loadSettings();
             } else if (screenId === 'setup-screen') {
                 this.populateSetupDropdowns();
+                // Reset user-selected flag and add listener
+                const fieldSelect = document.getElementById('setup-field');
+                if (fieldSelect) {
+                    fieldSelect.dataset.userSelected = 'false';
+                    fieldSelect.addEventListener('change', () => {
+                        fieldSelect.dataset.userSelected = 'true';
+                    }, { once: true });
+                }
             } else if (screenId === 'load-screen') {
                 this.renderPriorSessions();
             } else if (screenId === 'farm-profile-screen') {
@@ -364,11 +377,13 @@ const App = {
             const targetRate = document.getElementById('target-rate').value;
             const spreadWidth = document.getElementById('spread-width').value || 50;
 
-            // Get equipment and storage selections
+            // Get equipment, storage, and field selections
             const equipSelect = document.getElementById('setup-equipment');
             const storageSelect = document.getElementById('setup-storage');
+            const fieldSelect = document.getElementById('setup-field');
             const selectedEquipment = equipSelect ? equipSelect.options[equipSelect.selectedIndex] : null;
             const selectedStorage = storageSelect ? storageSelect.options[storageSelect.selectedIndex] : null;
+            const selectedField = fieldSelect ? fieldSelect.options[fieldSelect.selectedIndex] : null;
 
             // Get equipment capacity for calculated rate
             let equipmentCapacity = null;
@@ -420,6 +435,10 @@ const App = {
                 if (selectedStorage && selectedStorage.value) {
                     SpreadingTracker.currentLog.storageId = selectedStorage.value;
                     SpreadingTracker.currentLog.storageName = selectedStorage.textContent;
+                }
+                if (selectedField && selectedField.value) {
+                    SpreadingTracker.currentLog.fieldId = selectedField.value;
+                    SpreadingTracker.currentLog.fieldName = selectedField.textContent;
                 }
             }
 
@@ -645,6 +664,12 @@ const App = {
         }
     },
 
+    setupMap: null,
+    setupMapFields: [],
+    setupTractorMarker: null,
+    setupWatchId: null,
+    setupCurrentPosition: null,
+
     async populateSetupDropdowns() {
         const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
         if (!user || !window.FirebaseFarm) return;
@@ -655,21 +680,287 @@ const App = {
 
             const equipSelect = document.getElementById('setup-equipment');
             const storageSelect = document.getElementById('setup-storage');
+            const fieldSelect = document.getElementById('setup-field');
 
+            // Load equipment
+            let equipment = [];
             if (equipSelect) {
-                const equipment = await FirebaseFarm.getEquipment(farm.id);
+                equipment = await FirebaseFarm.getEquipment(farm.id);
                 equipSelect.innerHTML = '<option value="">Select equipment...</option>' +
                     equipment.map(eq => `<option value="${eq.id}">${eq.name} (${eq.type} - ${eq.capacity} ${eq.units})</option>`).join('');
             }
 
+            // Load storages
+            let storages = [];
             if (storageSelect) {
-                const storages = await FirebaseFarm.getStorages(farm.id);
+                storages = await FirebaseFarm.getStorages(farm.id);
                 storageSelect.innerHTML = '<option value="">Select storage...</option>' +
                     storages.map(s => `<option value="${s.id}">${s.name}${s.source ? ' (' + s.source + ')' : ''} - ${s.capacity} ${s.units}</option>`).join('');
             }
+
+            // Load fields
+            const fields = await FirebaseFarm.getFarmFields(farm.id);
+            this.setupMapFields = fields;
+            if (fieldSelect) {
+                fieldSelect.innerHTML = '<option value="">Select field...</option>' +
+                    fields.map(f => `<option value="${f.id}">${f.name || 'Unnamed'}</option>`).join('');
+            }
+
+            // Initialize setup map
+            this.initSetupMap(fields);
+
+            // Auto-populate from last spread
+            await this.autoPopulateFromLastSpread(equipment, storages, fields);
+
+            // Start GPS tracking for field auto-select
+            this.startSetupGpsTracking(fields);
+
         } catch (e) {
             console.error('Error populating setup dropdowns:', e);
         }
+    },
+
+    async autoPopulateFromLastSpread(equipment, storages, fields) {
+        try {
+            const dbHandler = window.FirebaseDB || StorageDB;
+            const logs = await dbHandler.getAllLogs();
+            if (!logs || logs.length === 0) return;
+
+            // Get most recent log
+            logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            const lastLog = logs[0];
+
+            // Auto-populate equipment
+            if (lastLog.equipmentId) {
+                const equipSelect = document.getElementById('setup-equipment');
+                if (equipSelect) equipSelect.value = lastLog.equipmentId;
+            }
+
+            // Auto-populate storage
+            if (lastLog.storageId) {
+                const storageSelect = document.getElementById('setup-storage');
+                if (storageSelect) storageSelect.value = lastLog.storageId;
+            }
+
+            // Auto-populate target rate
+            if (lastLog.targetRate) {
+                const targetRateInput = document.getElementById('target-rate');
+                if (targetRateInput) targetRateInput.value = lastLog.targetRate;
+            }
+
+            // Auto-populate spread width
+            if (lastLog.spreadWidth) {
+                const spreadWidthInput = document.getElementById('spread-width');
+                if (spreadWidthInput) spreadWidthInput.value = lastLog.spreadWidth;
+            }
+
+        } catch (e) {
+            console.error('Error auto-populating from last spread:', e);
+        }
+    },
+
+    initSetupMap(fields) {
+        const mapContainer = document.getElementById('setup-map');
+        if (!mapContainer) return;
+
+        // Clean up existing map
+        if (this.setupMap) {
+            this.setupMap.remove();
+            this.setupMap = null;
+        }
+
+        this.setupMap = L.map('setup-map', {
+            zoomControl: true,
+            attributionControl: false
+        }).setView([43.0, -89.4], 15);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19
+        }).addTo(this.setupMap);
+
+        // Add field boundaries
+        let bounds = null;
+        fields.forEach(field => {
+            if (!field.geojson) return;
+
+            const layer = L.geoJSON(field.geojson, {
+                style: {
+                    color: '#39FF14',
+                    weight: 3,
+                    fillOpacity: 0
+                }
+            }).addTo(this.setupMap);
+
+            // Add label
+            const center = layer.getBounds().getCenter();
+            L.tooltip({
+                permanent: true,
+                direction: 'center',
+                className: 'field-label-tooltip'
+            }).setContent(field.name || 'Unnamed').setLatLng(center).addTo(this.setupMap);
+
+            if (!bounds) {
+                bounds = layer.getBounds();
+            } else {
+                bounds.extend(layer.getBounds());
+            }
+        });
+
+        if (bounds) {
+            this.setupMap.fitBounds(bounds, { padding: [30, 30] });
+        }
+
+        // Invalidate size after render
+        setTimeout(() => {
+            if (this.setupMap) this.setupMap.invalidateSize();
+        }, 100);
+    },
+
+    startSetupGpsTracking(fields) {
+        // Stop any existing tracking
+        this.stopSetupGpsTracking();
+
+        if (!navigator.geolocation) return;
+
+        this.setupWatchId = navigator.geolocation.watchPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                this.setupCurrentPosition = { lat: latitude, lng: longitude };
+
+                // Update tractor marker on map
+                if (this.setupMap) {
+                    if (this.setupTractorMarker) {
+                        this.setupTractorMarker.setLatLng([latitude, longitude]);
+                    } else {
+                        this.setupTractorMarker = L.marker([latitude, longitude], {
+                            icon: L.divIcon({
+                                className: 'tractor-icon',
+                                html: '<div style="font-size:24px;text-shadow:0 0 3px #fff;">🚜</div>',
+                                iconSize: [30, 30],
+                                iconAnchor: [15, 15]
+                            })
+                        }).addTo(this.setupMap);
+                    }
+
+                    // Center map on tractor if first position
+                    if (!this.setupMapCentered) {
+                        this.setupMap.setView([latitude, longitude], 16);
+                        this.setupMapCentered = true;
+                    }
+                }
+
+                // Auto-select field based on location
+                this.autoSelectFieldByLocation(latitude, longitude, fields);
+            },
+            (error) => {
+                console.warn('Setup GPS error:', error.message);
+            },
+            { enableHighAccuracy: true, timeout: 30000, maximumAge: 5000 }
+        );
+    },
+
+    stopSetupGpsTracking() {
+        if (this.setupWatchId !== null) {
+            navigator.geolocation.clearWatch(this.setupWatchId);
+            this.setupWatchId = null;
+        }
+        this.setupMapCentered = false;
+    },
+
+    autoSelectFieldByLocation(lat, lng, fields) {
+        const fieldSelect = document.getElementById('setup-field');
+        if (!fieldSelect) return;
+
+        // Don't auto-select if user has manually selected
+        if (fieldSelect.dataset.userSelected === 'true') return;
+
+        for (const field of fields) {
+            if (!field.geojson) continue;
+
+            const polygon = this.getFieldPolygonCoords(field);
+            if (polygon.length === 0) continue;
+
+            if (this.pointInPolygon([lat, lng], polygon)) {
+                fieldSelect.value = field.id;
+                return;
+            }
+        }
+
+        // Not in any field - find closest field
+        let closestField = null;
+        let closestDist = Infinity;
+
+        for (const field of fields) {
+            if (!field.geojson) continue;
+            const center = this.getFieldCenter(field);
+            if (!center) continue;
+
+            const dist = this.calcDistance(lat, lng, center.lat, center.lng);
+            if (dist < closestDist) {
+                closestDist = dist;
+                closestField = field;
+            }
+        }
+
+        if (closestField) {
+            fieldSelect.value = closestField.id;
+        }
+    },
+
+    getFieldPolygonCoords(field) {
+        const coords = [];
+        if (!field.geojson) return coords;
+
+        const features = field.geojson.features || [field.geojson];
+        features.forEach(feature => {
+            const geom = feature.geometry || feature;
+            if (geom.type === 'Polygon') {
+                geom.coordinates[0].forEach(c => coords.push([c[1], c[0]]));
+            } else if (geom.type === 'MultiPolygon') {
+                geom.coordinates.forEach(poly => {
+                    poly[0].forEach(c => coords.push([c[1], c[0]]));
+                });
+            }
+        });
+        return coords;
+    },
+
+    getFieldCenter(field) {
+        const coords = this.getFieldPolygonCoords(field);
+        if (coords.length === 0) return null;
+        const lat = coords.reduce((sum, c) => sum + c[0], 0) / coords.length;
+        const lng = coords.reduce((sum, c) => sum + c[1], 0) / coords.length;
+        return { lat, lng };
+    },
+
+    pointInPolygon(point, polygon) {
+        const x = point[0], y = point[1];
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i][0], yi = polygon[i][1];
+            const xj = polygon[j][0], yj = polygon[j][1];
+            const intersect = ((yi > y) !== (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    },
+
+    calcDistance(lat1, lng1, lat2, lng2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    },
+
+    cleanupSetupScreen() {
+        this.stopSetupGpsTracking();
+        if (this.setupMap) {
+            this.setupMap.remove();
+            this.setupMap = null;
+        }
+        this.setupTractorMarker = null;
     },
 
     hideAdminButton() {

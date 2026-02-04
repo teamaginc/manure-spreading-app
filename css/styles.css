@@ -354,16 +354,43 @@ html, body {
 }
 
 /* Setup Screen */
-#setup-screen .screen-content {
-    justify-content: center;
-    max-width: 400px;
-    margin: 0 auto;
+#setup-screen {
+    display: flex;
+    flex-direction: column;
+}
+
+.setup-map {
+    flex: 1;
+    min-height: 200px;
     width: 100%;
+    z-index: 1;
+}
+
+.setup-form-panel {
+    padding: 16px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    max-height: 50%;
+    overflow-y: auto;
+}
+
+.setup-form-panel .form-group {
+    margin-bottom: 12px;
+}
+
+.setup-form-panel .form-row {
+    display: flex;
+    gap: 12px;
+}
+
+.setup-form-panel .form-group-half {
+    flex: 1;
 }
 
 .btn-record {
-    margin-top: 32px;
+    margin-top: 16px;
     background-color: var(--success-green);
+    width: 100%;
 }
 
 /* Load Prior Session Screen */

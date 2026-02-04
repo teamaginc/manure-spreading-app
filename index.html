@@ -132,18 +132,27 @@
             <button class="btn-back" data-screen="menu-screen">← Back</button>
             <h2>Spreading Setup</h2>
         </div>
-        <div class="screen-content">
+        <div id="setup-map" class="setup-map"></div>
+        <div class="setup-form-panel">
             <div class="form-group">
-                <label for="setup-equipment">Equipment</label>
-                <select id="setup-equipment" class="select-large">
-                    <option value="">Select equipment...</option>
+                <label for="setup-field">Field</label>
+                <select id="setup-field" class="select-large">
+                    <option value="">Detecting location...</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label for="setup-storage">Manure Storage</label>
-                <select id="setup-storage" class="select-large">
-                    <option value="">Select storage...</option>
-                </select>
+            <div class="form-row">
+                <div class="form-group form-group-half">
+                    <label for="setup-equipment">Equipment</label>
+                    <select id="setup-equipment" class="select-large">
+                        <option value="">Select equipment...</option>
+                    </select>
+                </div>
+                <div class="form-group form-group-half">
+                    <label for="setup-storage">Manure Storage</label>
+                    <select id="setup-storage" class="select-large">
+                        <option value="">Select storage...</option>
+                    </select>
+                </div>
             </div>
             <div class="form-row">
                 <div class="form-group form-group-half">
