@@ -295,19 +295,22 @@
             <button class="btn-back" data-screen="menu-screen">← Back</button>
             <h2>Admin Panel</h2>
         </div>
-        <div class="screen-content">
+        <div class="screen-content admin-dashboard-content">
             <!-- Global Search -->
             <div class="admin-search-container">
                 <input type="text" id="admin-global-search" class="admin-global-search-input" placeholder="Search users, farms, fields...">
                 <div id="admin-search-results" class="admin-search-results hidden"></div>
             </div>
 
+            <!-- Stats Row -->
             <div class="admin-stats">
                 <div class="stat-card"><div class="stat-value" id="stat-total-farmers">0</div><div class="stat-label">Farmers</div></div>
                 <div class="stat-card"><div class="stat-value" id="stat-total-farms">0</div><div class="stat-label">Farms</div></div>
                 <div class="stat-card"><div class="stat-value" id="stat-total-admins">0</div><div class="stat-label">Admins</div></div>
             </div>
-            <div class="admin-actions">
+
+            <!-- Mobile: Simple button list -->
+            <div class="admin-actions admin-actions-mobile">
                 <button class="btn btn-primary btn-large" id="admin-manage-farmers">Manage Farmers</button>
                 <button class="btn btn-primary btn-large" id="admin-manage-farms" style="background:#546e7a;">Manage Farms</button>
                 <button class="btn btn-large" id="admin-analytics-btn" style="background:#5c6bc0;color:#fff;">📊 Analytics</button>
@@ -317,6 +320,96 @@
                 <button class="btn btn-large" id="admin-app-settings-btn" style="background:#455a64;color:#fff;">⚙️ App Settings</button>
                 <button class="btn btn-secondary btn-large" id="admin-feature-toggles">Feature Toggles</button>
                 <button class="btn btn-large" id="admin-bulk-invite-btn" style="background:#1565c0;color:#fff;">📧 Bulk Invite</button>
+            </div>
+
+            <!-- Desktop: Card grid layout -->
+            <div class="admin-cards-grid">
+                <div class="admin-section">
+                    <h3 class="admin-section-title">User Management</h3>
+                    <div class="admin-card-row">
+                        <div class="admin-card" id="admin-card-farmers">
+                            <div class="admin-card-icon" style="background:#2d5a27;">👥</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">Manage Farmers</div>
+                                <div class="admin-card-desc">View and manage user accounts, roles, and permissions</div>
+                            </div>
+                        </div>
+                        <div class="admin-card" id="admin-card-bulk-invite">
+                            <div class="admin-card-icon" style="background:#1565c0;">📧</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">Bulk Invite</div>
+                                <div class="admin-card-desc">Send invitations to multiple users at once</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
+                    <h3 class="admin-section-title">Farm Management</h3>
+                    <div class="admin-card-row">
+                        <div class="admin-card" id="admin-card-farms">
+                            <div class="admin-card-icon" style="background:#546e7a;">🏡</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">Manage Farms</div>
+                                <div class="admin-card-desc">View farms, members, fields, and equipment</div>
+                            </div>
+                        </div>
+                        <div class="admin-card" id="admin-card-analytics">
+                            <div class="admin-card-icon" style="background:#5c6bc0;">📊</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">Analytics</div>
+                                <div class="admin-card-desc">Spreading stats, top farms, and usage insights</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
+                    <h3 class="admin-section-title">Monitoring</h3>
+                    <div class="admin-card-row">
+                        <div class="admin-card" id="admin-card-activity">
+                            <div class="admin-card-icon" style="background:#7b1fa2;">📜</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">Activity Log</div>
+                                <div class="admin-card-desc">Track logins, spreading sessions, and admin actions</div>
+                            </div>
+                        </div>
+                        <div class="admin-card" id="admin-card-status">
+                            <div class="admin-card-icon" style="background:#00796b;">🖥️</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">System Status</div>
+                                <div class="admin-card-desc">Database counts, service worker, and cache info</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-section">
+                    <h3 class="admin-section-title">Configuration</h3>
+                    <div class="admin-card-row">
+                        <div class="admin-card" id="admin-card-announcements">
+                            <div class="admin-card-icon" style="background:#f57c00;">📢</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">Announcements</div>
+                                <div class="admin-card-desc">Create and manage user-facing announcements</div>
+                            </div>
+                        </div>
+                        <div class="admin-card" id="admin-card-settings">
+                            <div class="admin-card-icon" style="background:#455a64;">⚙️</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">App Settings</div>
+                                <div class="admin-card-desc">Default values, units, and season boundaries</div>
+                            </div>
+                        </div>
+                        <div class="admin-card" id="admin-card-toggles">
+                            <div class="admin-card-icon" style="background:#8b4513;">🎚️</div>
+                            <div class="admin-card-content">
+                                <div class="admin-card-title">Feature Toggles</div>
+                                <div class="admin-card-desc">Enable or disable features globally</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -2116,3 +2116,139 @@ body:has(.announcement-banner:not(.hidden)) .app-sidebar {
     text-align: center;
     color: var(--danger-red);
 }
+
+/* ==================== ADMIN DASHBOARD DESKTOP LAYOUT ==================== */
+
+/* Hide desktop cards on mobile, show button list */
+.admin-cards-grid {
+    display: none;
+}
+
+.admin-actions-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Desktop: Show cards, hide mobile buttons */
+@media (min-width: 768px) {
+    .admin-actions-mobile {
+        display: none;
+    }
+
+    .admin-cards-grid {
+        display: block;
+    }
+
+    .admin-dashboard-content {
+        max-width: 1000px;
+    }
+
+    .admin-section {
+        margin-bottom: 32px;
+    }
+
+    .admin-section-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #5f6368;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .admin-card-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+    }
+
+    .admin-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 20px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: box-shadow 0.2s, border-color 0.2s, transform 0.15s;
+    }
+
+    .admin-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border-color: #c0c0c0;
+        transform: translateY(-2px);
+    }
+
+    .admin-card:active {
+        transform: translateY(0);
+    }
+
+    .admin-card-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+        color: #fff;
+    }
+
+    .admin-card-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .admin-card-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin-bottom: 4px;
+    }
+
+    .admin-card-desc {
+        font-size: 0.85rem;
+        color: #5f6368;
+        line-height: 1.4;
+    }
+
+    /* Larger stats cards on desktop */
+    .admin-dashboard-content .admin-stats {
+        margin-bottom: 32px;
+    }
+
+    .admin-dashboard-content .stat-card {
+        padding: 24px;
+    }
+
+    .admin-dashboard-content .stat-value {
+        font-size: 2.5rem;
+    }
+
+    .admin-dashboard-content .stat-label {
+        font-size: 0.9rem;
+    }
+
+    /* Better search bar on desktop */
+    .admin-dashboard-content .admin-search-container {
+        max-width: 500px;
+        margin-bottom: 24px;
+    }
+
+    .admin-dashboard-content .admin-global-search-input {
+        padding: 14px 20px;
+        font-size: 1rem;
+        border-radius: 24px;
+        background: var(--bg-card);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .admin-dashboard-content .admin-global-search-input:focus {
+        box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+    }
+}

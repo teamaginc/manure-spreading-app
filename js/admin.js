@@ -123,6 +123,30 @@ const AdminPanel = {
                 this.showBulkInviteModal();
             });
         }
+
+        // Desktop card click handlers
+        this.setupDesktopCards();
+    },
+
+    setupDesktopCards() {
+        const cardActions = {
+            'admin-card-farmers': () => { this.loadFarmerList(); App.showScreen('farmer-list-screen'); },
+            'admin-card-farms': () => { this.loadFarmList(); App.showScreen('farm-list-screen'); },
+            'admin-card-analytics': () => { this.loadAnalytics(); App.showScreen('admin-analytics-screen'); },
+            'admin-card-activity': () => { this.activityLogPage = 0; this.loadActivityLog(); App.showScreen('admin-activity-log-screen'); },
+            'admin-card-announcements': () => { this.loadAnnouncementsList(); App.showScreen('admin-announcements-screen'); },
+            'admin-card-status': () => { this.loadSystemStatus(); App.showScreen('admin-system-status-screen'); },
+            'admin-card-settings': () => { this.loadAppSettings(); App.showScreen('admin-settings-screen'); },
+            'admin-card-toggles': () => { this.loadFeatureToggles(); App.showScreen('feature-toggles-screen'); },
+            'admin-card-bulk-invite': () => { this.showBulkInviteModal(); }
+        };
+
+        Object.entries(cardActions).forEach(([cardId, action]) => {
+            const card = document.getElementById(cardId);
+            if (card) {
+                card.addEventListener('click', action);
+            }
+        });
     },
 
     // Farmer List
