@@ -354,8 +354,7 @@ html, body {
 }
 
 /* Setup Screen */
-#setup-screen {
-    display: flex;
+#setup-screen.active {
     flex-direction: column;
 }
 
