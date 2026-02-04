@@ -357,11 +357,8 @@ const App = {
 
     async getEquipmentCapacity(equipId) {
         try {
-            const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
-            if (!user || !window.FirebaseFarm) return null;
-            const farm = await FirebaseFarm.getFarmByUser(user.uid);
-            if (!farm) return null;
-            const equipment = await FirebaseFarm.getEquipment(farm.id);
+            if (!this.setupSelectedFarmId || !window.FirebaseFarm) return null;
+            const equipment = await FirebaseFarm.getEquipment(this.setupSelectedFarmId);
             const equip = equipment.find(e => e.id === equipId);
             return equip ? parseFloat(equip.capacity) || null : null;
         } catch (e) {
@@ -432,10 +429,21 @@ const App = {
             SpreadingTracker.equipmentCapacity = equipmentCapacity;
             SpreadingTracker.loadCount = this.loadCount;
 
-            // Attach equipment/storage/field info to the log and tracker
+            // Attach equipment/storage/field/farm info to the log and tracker
             if (SpreadingTracker.currentLog) {
                 SpreadingTracker.currentLog.loadCount = this.loadCount;
                 SpreadingTracker.currentLog.equipmentCapacity = equipmentCapacity;
+
+                // Save farm info
+                if (this.setupSelectedFarmId) {
+                    SpreadingTracker.currentLog.farmId = this.setupSelectedFarmId;
+                    const selectedFarm = this.setupUserFarms.find(f => f.id === this.setupSelectedFarmId);
+                    if (selectedFarm) {
+                        SpreadingTracker.currentLog.farmName = selectedFarm.name;
+                    }
+                    // Remember for next time
+                    localStorage.setItem('lastSpreadFarmId', this.setupSelectedFarmId);
+                }
 
                 if (selectedEquipment && selectedEquipment.value) {
                     SpreadingTracker.currentLog.equipmentId = selectedEquipment.value;
@@ -683,67 +691,132 @@ const App = {
     setupTractorMarker: null,
     setupWatchId: null,
     setupCurrentPosition: null,
+    setupUserFarms: [],
+    setupSelectedFarmId: null,
 
     async populateSetupDropdowns() {
         const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
+        const farmSelect = document.getElementById('setup-farm');
+        const farmGroup = document.getElementById('setup-farm-group');
         const fieldSelect = document.getElementById('setup-field');
         const equipSelect = document.getElementById('setup-equipment');
         const storageSelect = document.getElementById('setup-storage');
 
-        // Always set up field dropdown with "No Field" option first
-        if (fieldSelect) {
-            fieldSelect.innerHTML = '<option value="">No Field (optional)</option>';
-        }
+        // Reset dropdowns
+        if (fieldSelect) fieldSelect.innerHTML = '<option value="">No Field (optional)</option>';
+        if (equipSelect) equipSelect.innerHTML = '<option value="">Select equipment...</option>';
+        if (storageSelect) storageSelect.innerHTML = '<option value="">Select storage...</option>';
 
         // Initialize map even without farm data
         this.initSetupMap([]);
 
-        if (!user || !window.FirebaseFarm) return;
+        if (!user || !window.FirebaseFarm || !window.FirebaseAdmin) return;
 
         try {
-            const farm = await FirebaseFarm.getFarmByUser(user.uid);
+            // Get all farms user is a member of
+            this.setupUserFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
 
-            let equipment = [];
-            let storages = [];
-            let fields = [];
-
-            if (farm) {
-                // Load equipment
-                if (equipSelect) {
-                    equipment = await FirebaseFarm.getEquipment(farm.id);
-                    equipSelect.innerHTML = '<option value="">Select equipment...</option>' +
-                        equipment.map(eq => `<option value="${eq.id}">${eq.name} (${eq.type} - ${eq.capacity} ${eq.units})</option>`).join('');
-                }
-
-                // Load storages
-                if (storageSelect) {
-                    storages = await FirebaseFarm.getStorages(farm.id);
-                    storageSelect.innerHTML = '<option value="">Select storage...</option>' +
-                        storages.map(s => `<option value="${s.id}">${s.name}${s.source ? ' (' + s.source + ')' : ''} - ${s.capacity} ${s.units}</option>`).join('');
-                }
-
-                // Load fields
-                fields = await FirebaseFarm.getFarmFields(farm.id);
-                this.setupMapFields = fields;
-                if (fieldSelect) {
-                    fieldSelect.innerHTML = '<option value="">No Field (optional)</option>' +
-                        fields.map(f => `<option value="${f.id}">${f.name || 'Unnamed'}</option>`).join('');
-                }
-
-                // Re-initialize map with fields
-                this.initSetupMap(fields);
+            if (this.setupUserFarms.length === 0) {
+                // No farms - hide farm selector
+                if (farmGroup) farmGroup.style.display = 'none';
+                return;
             }
+
+            // Show farm selector
+            if (farmGroup) farmGroup.style.display = '';
+
+            if (this.setupUserFarms.length === 1) {
+                // Only one farm - auto-select it
+                if (farmSelect) {
+                    farmSelect.innerHTML = `<option value="${this.setupUserFarms[0].id}">${this.setupUserFarms[0].name || 'Unnamed Farm'}</option>`;
+                }
+                this.setupSelectedFarmId = this.setupUserFarms[0].id;
+                await this.loadFarmDataForSetup(this.setupUserFarms[0].id);
+            } else {
+                // Multiple farms - let user choose
+                if (farmSelect) {
+                    farmSelect.innerHTML = '<option value="">Select farm...</option>' +
+                        this.setupUserFarms.map(f => {
+                            const roleLabel = f.memberRole === 'owner' ? ' (Owner)' : '';
+                            return `<option value="${f.id}">${f.name || 'Unnamed Farm'}${roleLabel}</option>`;
+                        }).join('');
+
+                    // Add change listener
+                    farmSelect.addEventListener('change', async () => {
+                        this.setupSelectedFarmId = farmSelect.value;
+                        if (farmSelect.value) {
+                            await this.loadFarmDataForSetup(farmSelect.value);
+                        } else {
+                            // Reset if no farm selected
+                            if (fieldSelect) fieldSelect.innerHTML = '<option value="">No Field (optional)</option>';
+                            if (equipSelect) equipSelect.innerHTML = '<option value="">Select equipment...</option>';
+                            if (storageSelect) storageSelect.innerHTML = '<option value="">Select storage...</option>';
+                            this.initSetupMap([]);
+                        }
+                    });
+                }
+
+                // Try to auto-select the last used farm or user's own farm
+                const lastFarmId = localStorage.getItem('lastSpreadFarmId');
+                const userDoc = await FirebaseAdmin.getUserDoc(user.uid);
+                const defaultFarmId = lastFarmId || userDoc?.farmId;
+
+                if (defaultFarmId && this.setupUserFarms.some(f => f.id === defaultFarmId)) {
+                    if (farmSelect) farmSelect.value = defaultFarmId;
+                    this.setupSelectedFarmId = defaultFarmId;
+                    await this.loadFarmDataForSetup(defaultFarmId);
+                }
+            }
+
+        } catch (e) {
+            console.error('Error populating setup dropdowns:', e);
+        }
+    },
+
+    async loadFarmDataForSetup(farmId) {
+        const fieldSelect = document.getElementById('setup-field');
+        const equipSelect = document.getElementById('setup-equipment');
+        const storageSelect = document.getElementById('setup-storage');
+
+        try {
+            // Load equipment
+            let equipment = [];
+            if (equipSelect) {
+                equipment = await FirebaseFarm.getEquipment(farmId);
+                equipSelect.innerHTML = '<option value="">Select equipment...</option>' +
+                    equipment.map(eq => `<option value="${eq.id}">${eq.name} (${eq.type} - ${eq.capacity} ${eq.units})</option>`).join('');
+            }
+
+            // Load storages
+            let storages = [];
+            if (storageSelect) {
+                storages = await FirebaseFarm.getStorages(farmId);
+                storageSelect.innerHTML = '<option value="">Select storage...</option>' +
+                    storages.map(s => `<option value="${s.id}">${s.name}${s.source ? ' (' + s.source + ')' : ''} - ${s.capacity} ${s.units}</option>`).join('');
+            }
+
+            // Load fields
+            const fields = await FirebaseFarm.getFarmFields(farmId);
+            this.setupMapFields = fields;
+            if (fieldSelect) {
+                fieldSelect.innerHTML = '<option value="">No Field (optional)</option>' +
+                    fields.map(f => `<option value="${f.id}">${f.name || 'Unnamed'}</option>`).join('');
+            }
+
+            // Re-initialize map with fields
+            this.initSetupMap(fields);
 
             // Auto-populate from last spread
             await this.autoPopulateFromLastSpread(equipment, storages, fields);
 
             // Start GPS tracking for field auto-select (only if fields exist)
+            this.stopSetupGpsTracking();
             if (fields.length > 0) {
                 this.startSetupGpsTracking(fields);
             }
 
         } catch (e) {
-            console.error('Error populating setup dropdowns:', e);
+            console.error('Error loading farm data for setup:', e);
         }
     },
 
