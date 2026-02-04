@@ -470,12 +470,14 @@ const FirebaseAdmin = {
         // Returns all farms the user is a member of (including owned farms)
         try {
             const farms = await this.getAllFarms();
+            console.log('All farms in system:', farms.length);
             const userFarms = [];
 
             for (const farm of farms) {
                 const members = await FirebaseFarm.getMembers(farm.id);
                 const isMember = members.some(m => m.userId === userId);
                 if (isMember) {
+                    console.log('User is member of farm:', farm.name, farm.id);
                     const memberInfo = members.find(m => m.userId === userId);
                     userFarms.push({
                         ...farm,
@@ -486,16 +488,19 @@ const FirebaseAdmin = {
 
             // Also check if user has farmId set (owner of that farm)
             const userDoc = await this.getUserDoc(userId);
+            console.log('User farmId from userDoc:', userDoc?.farmId);
             if (userDoc?.farmId) {
                 const alreadyIncluded = userFarms.some(f => f.id === userDoc.farmId);
                 if (!alreadyIncluded) {
                     const farm = await FirebaseFarm.getFarm(userDoc.farmId);
                     if (farm) {
+                        console.log('Adding owned farm:', farm.name, farm.id);
                         userFarms.push({ ...farm, memberRole: 'owner' });
                     }
                 }
             }
 
+            console.log('Total farms for user:', userFarms.length);
             return userFarms;
         } catch (e) {
             console.error('getFarmsForUser error:', e);

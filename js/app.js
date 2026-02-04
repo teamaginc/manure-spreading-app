@@ -707,17 +707,32 @@ const App = {
         if (equipSelect) equipSelect.innerHTML = '<option value="">Select equipment...</option>';
         if (storageSelect) storageSelect.innerHTML = '<option value="">Select storage...</option>';
 
-        // Initialize map even without farm data
+        // Initialize map even without farm data - but start GPS to show user location
         this.initSetupMap([]);
+        this.startSetupGpsTracking([]);  // Start GPS immediately to show location
 
-        if (!user || !window.FirebaseFarm || !window.FirebaseAdmin) return;
+        if (!user || !window.FirebaseFarm) return;
+
+        // Wait for FirebaseAdmin to be available (ES module timing)
+        let attempts = 0;
+        while (!window.FirebaseAdmin && attempts < 20) {
+            await new Promise(r => setTimeout(r, 100));
+            attempts++;
+        }
+        if (!window.FirebaseAdmin) {
+            console.warn('FirebaseAdmin not available after waiting');
+            return;
+        }
 
         try {
             // Get all farms user is a member of
+            console.log('Fetching farms for user:', user.uid);
             this.setupUserFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
+            console.log('Found farms:', this.setupUserFarms);
 
             if (this.setupUserFarms.length === 0) {
                 // No farms - hide farm selector
+                console.log('No farms found for user');
                 if (farmGroup) farmGroup.style.display = 'none';
                 return;
             }
@@ -727,6 +742,7 @@ const App = {
 
             if (this.setupUserFarms.length === 1) {
                 // Only one farm - auto-select it
+                console.log('Single farm, auto-selecting:', this.setupUserFarms[0].name);
                 if (farmSelect) {
                     farmSelect.innerHTML = `<option value="${this.setupUserFarms[0].id}">${this.setupUserFarms[0].name || 'Unnamed Farm'}</option>`;
                 }
@@ -734,6 +750,7 @@ const App = {
                 await this.loadFarmDataForSetup(this.setupUserFarms[0].id);
             } else {
                 // Multiple farms - let user choose
+                console.log('Multiple farms found:', this.setupUserFarms.length);
                 if (farmSelect) {
                     farmSelect.innerHTML = '<option value="">Select farm...</option>' +
                         this.setupUserFarms.map(f => {
@@ -741,19 +758,29 @@ const App = {
                             return `<option value="${f.id}">${f.name || 'Unnamed Farm'}${roleLabel}</option>`;
                         }).join('');
 
-                    // Add change listener
-                    farmSelect.addEventListener('change', async () => {
-                        this.setupSelectedFarmId = farmSelect.value;
-                        if (farmSelect.value) {
-                            await this.loadFarmDataForSetup(farmSelect.value);
-                        } else {
-                            // Reset if no farm selected
-                            if (fieldSelect) fieldSelect.innerHTML = '<option value="">No Field (optional)</option>';
-                            if (equipSelect) equipSelect.innerHTML = '<option value="">Select equipment...</option>';
-                            if (storageSelect) storageSelect.innerHTML = '<option value="">Select storage...</option>';
-                            this.initSetupMap([]);
-                        }
-                    });
+                    // Add change listener (only once)
+                    if (!farmSelect.dataset.listenerAdded) {
+                        farmSelect.dataset.listenerAdded = 'true';
+                        farmSelect.addEventListener('change', async () => {
+                            this.setupSelectedFarmId = farmSelect.value;
+                            if (farmSelect.value) {
+                                await this.loadFarmDataForSetup(farmSelect.value);
+                            } else {
+                                // Reset if no farm selected
+                                if (document.getElementById('setup-field')) {
+                                    document.getElementById('setup-field').innerHTML = '<option value="">No Field (optional)</option>';
+                                }
+                                if (document.getElementById('setup-equipment')) {
+                                    document.getElementById('setup-equipment').innerHTML = '<option value="">Select equipment...</option>';
+                                }
+                                if (document.getElementById('setup-storage')) {
+                                    document.getElementById('setup-storage').innerHTML = '<option value="">Select storage...</option>';
+                                }
+                                this.setupTrackingFields = [];
+                                this.initSetupMapWithFields([]);
+                            }
+                        });
+                    }
                 }
 
                 // Try to auto-select the last used farm or user's own farm
@@ -762,6 +789,7 @@ const App = {
                 const defaultFarmId = lastFarmId || userDoc?.farmId;
 
                 if (defaultFarmId && this.setupUserFarms.some(f => f.id === defaultFarmId)) {
+                    console.log('Auto-selecting default farm:', defaultFarmId);
                     if (farmSelect) farmSelect.value = defaultFarmId;
                     this.setupSelectedFarmId = defaultFarmId;
                     await this.loadFarmDataForSetup(defaultFarmId);
@@ -803,16 +831,23 @@ const App = {
                     fields.map(f => `<option value="${f.id}">${f.name || 'Unnamed'}</option>`).join('');
             }
 
-            // Re-initialize map with fields
-            this.initSetupMap(fields);
+            // Re-initialize map with fields (keeps user's location if already tracking)
+            this.initSetupMapWithFields(fields);
 
             // Auto-populate from last spread
             await this.autoPopulateFromLastSpread(equipment, storages, fields);
 
-            // Start GPS tracking for field auto-select (only if fields exist)
-            this.stopSetupGpsTracking();
-            if (fields.length > 0) {
-                this.startSetupGpsTracking(fields);
+            // Update the fields being tracked for auto-select (GPS already running)
+            this.setupTrackingFields = fields;
+            this.setupMapFields = fields;
+
+            // If we have a current position, auto-select field now
+            if (this.setupCurrentPosition && fields.length > 0) {
+                this.autoSelectFieldByLocation(
+                    this.setupCurrentPosition.lat,
+                    this.setupCurrentPosition.lng,
+                    fields
+                );
             }
 
         } catch (e) {
@@ -859,6 +894,8 @@ const App = {
         }
     },
 
+    setupFieldLayers: [],
+
     initSetupMap(fields) {
         const mapContainer = document.getElementById('setup-map');
         if (!mapContainer) return;
@@ -868,6 +905,9 @@ const App = {
             this.setupMap.remove();
             this.setupMap = null;
         }
+        this.setupFieldLayers = [];
+        this.setupTractorMarker = null;
+        this.setupMapCentered = false;
 
         this.setupMap = L.map('setup-map', {
             zoomControl: true,
@@ -878,42 +918,81 @@ const App = {
             maxZoom: 19
         }).addTo(this.setupMap);
 
-        // Add field boundaries
-        let bounds = null;
-        fields.forEach(field => {
-            if (!field.geojson) return;
-
-            const layer = L.geoJSON(field.geojson, {
-                style: {
-                    color: '#39FF14',
-                    weight: 3,
-                    fillOpacity: 0
-                }
-            }).addTo(this.setupMap);
-
-            // Add label
-            const center = layer.getBounds().getCenter();
-            L.tooltip({
-                permanent: true,
-                direction: 'center',
-                className: 'field-label-tooltip'
-            }).setContent(field.name || 'Unnamed').setLatLng(center).addTo(this.setupMap);
-
-            if (!bounds) {
-                bounds = layer.getBounds();
-            } else {
-                bounds.extend(layer.getBounds());
-            }
-        });
-
-        if (bounds) {
-            this.setupMap.fitBounds(bounds, { padding: [30, 30] });
-        }
+        // Add field boundaries if provided
+        this.addFieldsToSetupMap(fields);
 
         // Invalidate size after render
         setTimeout(() => {
             if (this.setupMap) this.setupMap.invalidateSize();
         }, 100);
+    },
+
+    initSetupMapWithFields(fields) {
+        // If no map exists, create it
+        if (!this.setupMap) {
+            this.initSetupMap(fields);
+            return;
+        }
+
+        // Clear existing field layers but keep tractor marker
+        this.setupFieldLayers.forEach(layer => {
+            this.setupMap.removeLayer(layer);
+        });
+        this.setupFieldLayers = [];
+
+        // Add new field boundaries
+        this.addFieldsToSetupMap(fields);
+
+        // If we have fields and no current position, fit to field bounds
+        // But if we have a current position, don't move the map
+        if (fields.length > 0 && !this.setupCurrentPosition) {
+            let bounds = null;
+            fields.forEach(field => {
+                if (!field.geojson) return;
+                try {
+                    const layer = L.geoJSON(field.geojson);
+                    if (!bounds) {
+                        bounds = layer.getBounds();
+                    } else {
+                        bounds.extend(layer.getBounds());
+                    }
+                } catch (e) {}
+            });
+            if (bounds && bounds.isValid()) {
+                this.setupMap.fitBounds(bounds, { padding: [30, 30] });
+            }
+        }
+    },
+
+    addFieldsToSetupMap(fields) {
+        if (!this.setupMap || !fields) return;
+
+        fields.forEach(field => {
+            if (!field.geojson) return;
+
+            try {
+                const layer = L.geoJSON(field.geojson, {
+                    style: {
+                        color: '#39FF14',
+                        weight: 3,
+                        fillOpacity: 0
+                    }
+                }).addTo(this.setupMap);
+                this.setupFieldLayers.push(layer);
+
+                // Add label
+                const center = layer.getBounds().getCenter();
+                const tooltip = L.tooltip({
+                    permanent: true,
+                    direction: 'center',
+                    className: 'field-label-tooltip'
+                }).setContent(field.name || 'Unnamed').setLatLng(center);
+                this.setupMap.addLayer(tooltip);
+                this.setupFieldLayers.push(tooltip);
+            } catch (e) {
+                console.warn('Error adding field to map:', e);
+            }
+        });
     },
 
     startSetupGpsTracking(fields) {
@@ -924,6 +1003,9 @@ const App = {
             console.warn('Geolocation not available');
             return;
         }
+
+        // Store the fields for this tracking session
+        this.setupTrackingFields = fields || [];
 
         // Set a timeout to stop waiting for GPS after 10 seconds
         this.setupGpsTimeout = setTimeout(() => {
@@ -959,15 +1041,17 @@ const App = {
                         }).addTo(this.setupMap);
                     }
 
-                    // Center map on tractor if first position
+                    // Center map on tractor if first position (or no fields yet)
                     if (!this.setupMapCentered) {
                         this.setupMap.setView([latitude, longitude], 16);
                         this.setupMapCentered = true;
                     }
                 }
 
-                // Auto-select field based on location
-                this.autoSelectFieldByLocation(latitude, longitude, fields);
+                // Auto-select field based on location (only if we have fields)
+                if (this.setupTrackingFields && this.setupTrackingFields.length > 0) {
+                    this.autoSelectFieldByLocation(latitude, longitude, this.setupTrackingFields);
+                }
             },
             (error) => {
                 console.warn('Setup GPS error:', error.message);
