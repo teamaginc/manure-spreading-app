@@ -672,48 +672,61 @@ const App = {
 
     async populateSetupDropdowns() {
         const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
+        const fieldSelect = document.getElementById('setup-field');
+        const equipSelect = document.getElementById('setup-equipment');
+        const storageSelect = document.getElementById('setup-storage');
+
+        // Always set up field dropdown with "No Field" option first
+        if (fieldSelect) {
+            fieldSelect.innerHTML = '<option value="">No Field (optional)</option>';
+        }
+
+        // Initialize map even without farm data
+        this.initSetupMap([]);
+
         if (!user || !window.FirebaseFarm) return;
 
         try {
             const farm = await FirebaseFarm.getFarmByUser(user.uid);
-            if (!farm) return;
 
-            const equipSelect = document.getElementById('setup-equipment');
-            const storageSelect = document.getElementById('setup-storage');
-            const fieldSelect = document.getElementById('setup-field');
-
-            // Load equipment
             let equipment = [];
-            if (equipSelect) {
-                equipment = await FirebaseFarm.getEquipment(farm.id);
-                equipSelect.innerHTML = '<option value="">Select equipment...</option>' +
-                    equipment.map(eq => `<option value="${eq.id}">${eq.name} (${eq.type} - ${eq.capacity} ${eq.units})</option>`).join('');
-            }
-
-            // Load storages
             let storages = [];
-            if (storageSelect) {
-                storages = await FirebaseFarm.getStorages(farm.id);
-                storageSelect.innerHTML = '<option value="">Select storage...</option>' +
-                    storages.map(s => `<option value="${s.id}">${s.name}${s.source ? ' (' + s.source + ')' : ''} - ${s.capacity} ${s.units}</option>`).join('');
-            }
+            let fields = [];
 
-            // Load fields
-            const fields = await FirebaseFarm.getFarmFields(farm.id);
-            this.setupMapFields = fields;
-            if (fieldSelect) {
-                fieldSelect.innerHTML = '<option value="">Select field...</option>' +
-                    fields.map(f => `<option value="${f.id}">${f.name || 'Unnamed'}</option>`).join('');
-            }
+            if (farm) {
+                // Load equipment
+                if (equipSelect) {
+                    equipment = await FirebaseFarm.getEquipment(farm.id);
+                    equipSelect.innerHTML = '<option value="">Select equipment...</option>' +
+                        equipment.map(eq => `<option value="${eq.id}">${eq.name} (${eq.type} - ${eq.capacity} ${eq.units})</option>`).join('');
+                }
 
-            // Initialize setup map
-            this.initSetupMap(fields);
+                // Load storages
+                if (storageSelect) {
+                    storages = await FirebaseFarm.getStorages(farm.id);
+                    storageSelect.innerHTML = '<option value="">Select storage...</option>' +
+                        storages.map(s => `<option value="${s.id}">${s.name}${s.source ? ' (' + s.source + ')' : ''} - ${s.capacity} ${s.units}</option>`).join('');
+                }
+
+                // Load fields
+                fields = await FirebaseFarm.getFarmFields(farm.id);
+                this.setupMapFields = fields;
+                if (fieldSelect) {
+                    fieldSelect.innerHTML = '<option value="">No Field (optional)</option>' +
+                        fields.map(f => `<option value="${f.id}">${f.name || 'Unnamed'}</option>`).join('');
+                }
+
+                // Re-initialize map with fields
+                this.initSetupMap(fields);
+            }
 
             // Auto-populate from last spread
             await this.autoPopulateFromLastSpread(equipment, storages, fields);
 
-            // Start GPS tracking for field auto-select
-            this.startSetupGpsTracking(fields);
+            // Start GPS tracking for field auto-select (only if fields exist)
+            if (fields.length > 0) {
+                this.startSetupGpsTracking(fields);
+            }
 
         } catch (e) {
             console.error('Error populating setup dropdowns:', e);
@@ -820,10 +833,27 @@ const App = {
         // Stop any existing tracking
         this.stopSetupGpsTracking();
 
-        if (!navigator.geolocation) return;
+        if (!navigator.geolocation) {
+            console.warn('Geolocation not available');
+            return;
+        }
+
+        // Set a timeout to stop waiting for GPS after 10 seconds
+        this.setupGpsTimeout = setTimeout(() => {
+            if (!this.setupCurrentPosition) {
+                console.warn('GPS timeout - no position received');
+                // Field dropdown already has "No Field" as default, so user can proceed
+            }
+        }, 10000);
 
         this.setupWatchId = navigator.geolocation.watchPosition(
             (position) => {
+                // Clear the timeout since we got a position
+                if (this.setupGpsTimeout) {
+                    clearTimeout(this.setupGpsTimeout);
+                    this.setupGpsTimeout = null;
+                }
+
                 const { latitude, longitude } = position.coords;
                 this.setupCurrentPosition = { lat: latitude, lng: longitude };
 
@@ -854,8 +884,13 @@ const App = {
             },
             (error) => {
                 console.warn('Setup GPS error:', error.message);
+                // Clear timeout on error too
+                if (this.setupGpsTimeout) {
+                    clearTimeout(this.setupGpsTimeout);
+                    this.setupGpsTimeout = null;
+                }
             },
-            { enableHighAccuracy: true, timeout: 30000, maximumAge: 5000 }
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
         );
     },
 
@@ -863,6 +898,10 @@ const App = {
         if (this.setupWatchId !== null) {
             navigator.geolocation.clearWatch(this.setupWatchId);
             this.setupWatchId = null;
+        }
+        if (this.setupGpsTimeout) {
+            clearTimeout(this.setupGpsTimeout);
+            this.setupGpsTimeout = null;
         }
         this.setupMapCentered = false;
     },
