@@ -16,6 +16,15 @@
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+    <!-- Announcement Banner (user-facing) -->
+    <div id="announcement-banner" class="announcement-banner hidden">
+        <div class="announcement-banner-content">
+            <span class="announcement-banner-icon"></span>
+            <span class="announcement-banner-text"></span>
+        </div>
+        <button class="announcement-banner-dismiss" id="dismiss-announcement">×</button>
+    </div>
+
     <!-- Desktop Sidebar (hidden on mobile, visible on desktop after login) -->
     <nav class="app-sidebar" id="app-sidebar">
         <div class="sidebar-logo">
@@ -281,6 +290,12 @@
             <h2>Admin Panel</h2>
         </div>
         <div class="screen-content">
+            <!-- Global Search -->
+            <div class="admin-search-container">
+                <input type="text" id="admin-global-search" class="admin-global-search-input" placeholder="Search users, farms, fields...">
+                <div id="admin-search-results" class="admin-search-results hidden"></div>
+            </div>
+
             <div class="admin-stats">
                 <div class="stat-card"><div class="stat-value" id="stat-total-farmers">0</div><div class="stat-label">Farmers</div></div>
                 <div class="stat-card"><div class="stat-value" id="stat-total-farms">0</div><div class="stat-label">Farms</div></div>
@@ -289,7 +304,13 @@
             <div class="admin-actions">
                 <button class="btn btn-primary btn-large" id="admin-manage-farmers">Manage Farmers</button>
                 <button class="btn btn-primary btn-large" id="admin-manage-farms" style="background:#546e7a;">Manage Farms</button>
+                <button class="btn btn-large" id="admin-analytics-btn" style="background:#5c6bc0;color:#fff;">📊 Analytics</button>
+                <button class="btn btn-large" id="admin-activity-log-btn" style="background:#7b1fa2;color:#fff;">📜 Activity Log</button>
+                <button class="btn btn-large" id="admin-announcements-btn" style="background:#f57c00;color:#fff;">📢 Announcements</button>
+                <button class="btn btn-large" id="admin-system-status-btn" style="background:#00796b;color:#fff;">🖥️ System Status</button>
+                <button class="btn btn-large" id="admin-app-settings-btn" style="background:#455a64;color:#fff;">⚙️ App Settings</button>
                 <button class="btn btn-secondary btn-large" id="admin-feature-toggles">Feature Toggles</button>
+                <button class="btn btn-large" id="admin-bulk-invite-btn" style="background:#1565c0;color:#fff;">📧 Bulk Invite</button>
             </div>
         </div>
     </div>
@@ -359,6 +380,17 @@
                     <span>Admin Role</span>
                     <input type="checkbox" id="farmer-admin-toggle">
                     <span class="toggle-switch"></span>
+                </label>
+            </div>
+
+            <div class="toggle-section">
+                <label class="toggle-label">
+                    <span>Account Status</span>
+                    <select id="farmer-status-select" style="width:auto;min-width:120px;padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="suspended">Suspended</option>
+                    </select>
                 </label>
             </div>
 
@@ -552,6 +584,276 @@
                 </label>
                 <p class="toggle-description">When enabled globally, farmers with individual toggle on will see field boundaries on their map.</p>
             </div>
+        </div>
+    </div>
+
+    <!-- Admin Analytics Screen -->
+    <div id="admin-analytics-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>Analytics & Insights</h2>
+        </div>
+        <div class="screen-content">
+            <div class="analytics-period-selector">
+                <label for="analytics-period">Time Period:</label>
+                <select id="analytics-period">
+                    <option value="all">All Time</option>
+                    <option value="year">This Year</option>
+                    <option value="season">This Season</option>
+                    <option value="month">This Month</option>
+                </select>
+            </div>
+            <div class="analytics-stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="analytics-total-records">0</div>
+                    <div class="stat-label">Spreading Records</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="analytics-total-acres">0</div>
+                    <div class="stat-label">Total Acres</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="analytics-avg-rate">0</div>
+                    <div class="stat-label">Avg Rate (gal/ac)</div>
+                </div>
+            </div>
+            <div class="analytics-lists">
+                <div class="analytics-list-section">
+                    <h3>Most Active Farms</h3>
+                    <div id="analytics-top-farms" class="analytics-list">
+                        <p class="loading-text">Loading...</p>
+                    </div>
+                </div>
+                <div class="analytics-list-section">
+                    <h3>Most Active Users</h3>
+                    <div id="analytics-top-users" class="analytics-list">
+                        <p class="loading-text">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Activity Log Screen -->
+    <div id="admin-activity-log-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>Activity Log</h2>
+        </div>
+        <div class="screen-content">
+            <div class="activity-log-filters">
+                <select id="activity-log-type">
+                    <option value="">All Events</option>
+                    <option value="login">Logins</option>
+                    <option value="registration">Registrations</option>
+                    <option value="spreading_start">Spreading Start</option>
+                    <option value="spreading_end">Spreading End</option>
+                    <option value="export">Exports</option>
+                    <option value="user_status_change">Status Changes</option>
+                    <option value="announcement_create">Announcements</option>
+                    <option value="settings_update">Settings</option>
+                </select>
+                <input type="date" id="activity-log-date" placeholder="Filter by date">
+            </div>
+            <div id="activity-log-list" class="activity-log-list">
+                <p class="loading-text">Loading...</p>
+            </div>
+            <button class="btn btn-secondary" id="activity-log-load-more" style="width:100%;margin-top:12px;display:none;">Load More</button>
+        </div>
+    </div>
+
+    <!-- Admin System Status Screen -->
+    <div id="admin-system-status-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>System Status</h2>
+        </div>
+        <div class="screen-content">
+            <div class="system-status-grid">
+                <div class="status-card">
+                    <div class="status-icon">👥</div>
+                    <div class="status-value" id="status-user-count">-</div>
+                    <div class="status-label">Users</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon">🏡</div>
+                    <div class="status-value" id="status-farm-count">-</div>
+                    <div class="status-label">Farms</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon">🗺️</div>
+                    <div class="status-value" id="status-field-count">-</div>
+                    <div class="status-label">Fields</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-icon">📋</div>
+                    <div class="status-value" id="status-record-count">-</div>
+                    <div class="status-label">Records</div>
+                </div>
+            </div>
+            <div class="system-status-section">
+                <h3>Service Worker</h3>
+                <div class="system-status-info">
+                    <div class="status-row">
+                        <span>Status:</span>
+                        <span id="sw-status">Checking...</span>
+                    </div>
+                    <div class="status-row">
+                        <span>Cache Version:</span>
+                        <span id="sw-cache-version">-</span>
+                    </div>
+                </div>
+                <button class="btn btn-danger" id="clear-cache-btn" style="width:100%;margin-top:12px;">Clear Cache & Reload</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Announcements Screen -->
+    <div id="admin-announcements-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>Announcements</h2>
+        </div>
+        <div class="screen-content">
+            <button class="btn btn-primary" id="create-announcement-btn" style="width:100%;margin-bottom:16px;">Create Announcement</button>
+            <div id="announcements-list" class="announcements-list">
+                <p class="loading-text">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Announcement Modal -->
+    <div id="create-announcement-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="announcement-modal-title">Create Announcement</h3>
+            <form id="announcement-form">
+                <input type="hidden" id="announcement-edit-id">
+                <div class="form-group">
+                    <label for="announcement-title">Title</label>
+                    <input type="text" id="announcement-title" required placeholder="Announcement title">
+                </div>
+                <div class="form-group">
+                    <label for="announcement-message">Message</label>
+                    <textarea id="announcement-message" required placeholder="Announcement message" rows="4" style="width:100%;padding:12px;border:2px solid var(--border-color);border-radius:8px;font-size:1rem;resize:vertical;"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group form-group-half">
+                        <label for="announcement-type">Type</label>
+                        <select id="announcement-type">
+                            <option value="info">Info</option>
+                            <option value="feature">New Feature</option>
+                            <option value="warning">Warning</option>
+                            <option value="maintenance">Maintenance</option>
+                        </select>
+                    </div>
+                    <div class="form-group form-group-half">
+                        <label for="announcement-expires">Expires (optional)</label>
+                        <input type="date" id="announcement-expires">
+                    </div>
+                </div>
+                <div class="toggle-section" style="margin-bottom:16px;">
+                    <label class="toggle-label">
+                        <span>Dismissible</span>
+                        <input type="checkbox" id="announcement-dismissible" checked>
+                        <span class="toggle-switch"></span>
+                    </label>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button type="submit" class="btn btn-primary" style="flex:1;">Save</button>
+                    <button type="button" class="btn btn-danger" id="announcement-cancel" style="flex:1;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin App Settings Screen -->
+    <div id="admin-settings-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>App Settings</h2>
+        </div>
+        <div class="screen-content">
+            <form id="app-settings-form">
+                <div class="settings-section">
+                    <h3>Default Values</h3>
+                    <div class="form-row">
+                        <div class="form-group form-group-half">
+                            <label for="setting-spread-width">Default Spread Width (ft)</label>
+                            <input type="number" id="setting-spread-width" min="1" step="1" value="50">
+                        </div>
+                        <div class="form-group form-group-half">
+                            <label for="setting-rate-units">Rate Units</label>
+                            <select id="setting-rate-units">
+                                <option value="gal/ac">Gallons per Acre</option>
+                                <option value="tons/ac">Tons per Acre</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>Season Boundaries</h3>
+                    <div class="form-row">
+                        <div class="form-group form-group-half">
+                            <label for="setting-spring-month">Spring Starts (Month)</label>
+                            <select id="setting-spring-month">
+                                <option value="1">January</option>
+                                <option value="2">February</option>
+                                <option value="3" selected>March</option>
+                                <option value="4">April</option>
+                                <option value="5">May</option>
+                            </select>
+                        </div>
+                        <div class="form-group form-group-half">
+                            <label for="setting-fall-month">Fall Starts (Month)</label>
+                            <select id="setting-fall-month">
+                                <option value="8">August</option>
+                                <option value="9" selected>September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-large" style="width:100%;margin-top:16px;">Save Settings</button>
+            </form>
+            <div id="app-settings-message" class="success-message hidden" style="margin-top:16px;"></div>
+        </div>
+    </div>
+
+    <!-- Bulk Invite Modal -->
+    <div id="bulk-invite-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3>Bulk Invite Users</h3>
+            <form id="bulk-invite-form">
+                <div class="form-group">
+                    <label for="bulk-invite-farm">Invite to Farm</label>
+                    <select id="bulk-invite-farm">
+                        <option value="">Select a farm...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="bulk-invite-emails">Email Addresses (one per line)</label>
+                    <textarea id="bulk-invite-emails" required placeholder="john@example.com&#10;jane@example.com&#10;..." rows="6" style="width:100%;padding:12px;border:2px solid var(--border-color);border-radius:8px;font-size:1rem;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="bulk-invite-role">Role</label>
+                    <select id="bulk-invite-role">
+                        <option value="member">Member</option>
+                        <option value="farming_partner">Farming Partner</option>
+                        <option value="commercial_partner">Commercial Partner</option>
+                    </select>
+                </div>
+                <div id="bulk-invite-progress" class="hidden" style="margin-bottom:16px;">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="bulk-invite-progress-bar"></div>
+                    </div>
+                    <p id="bulk-invite-status" style="text-align:center;font-size:0.9rem;color:#666;margin-top:8px;">Sending invites...</p>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button type="submit" class="btn btn-primary" id="bulk-invite-submit" style="flex:1;">Send Invites</button>
+                    <button type="button" class="btn btn-danger" id="bulk-invite-cancel" style="flex:1;">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 

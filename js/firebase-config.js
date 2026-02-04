@@ -1,7 +1,7 @@
 // Firebase Configuration and Initialization
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, orderBy, addDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc, query, where, orderBy, addDoc, updateDoc, limit, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -96,6 +96,13 @@ const FirebaseAuth = {
             // Track login
             if (typeof Tracking !== 'undefined') {
                 Tracking.trackLogin(email);
+            }
+
+            // Update last login timestamp
+            try {
+                await FirebaseAdmin.updateLastLogin(userCredential.user.uid);
+            } catch (e) {
+                console.log('Failed to update last login:', e);
             }
 
             return {
@@ -456,6 +463,430 @@ const FirebaseAdmin = {
         } catch (e) {
             console.error('getFarmMembers error:', e);
             return [];
+        }
+    },
+
+    // ==================== ACTIVITY LOGGING ====================
+
+    async logActivity(eventType, details = {}) {
+        try {
+            const user = FirebaseAuth.getCurrentUser();
+            const logEntry = {
+                timestamp: new Date().toISOString(),
+                eventType: eventType,
+                userId: user ? user.uid : null,
+                userEmail: user ? user.email : null,
+                details: details,
+                userAgent: navigator.userAgent
+            };
+            await addDoc(collection(db, "activity_log"), logEntry);
+        } catch (e) {
+            console.error('logActivity error:', e);
+        }
+    },
+
+    async getActivityLogs(options = {}) {
+        try {
+            const { eventType, userId, startDate, endDate, pageSize = 50, lastDoc } = options;
+            let q = collection(db, "activity_log");
+            const constraints = [orderBy("timestamp", "desc")];
+
+            if (eventType) {
+                constraints.unshift(where("eventType", "==", eventType));
+            }
+            if (userId) {
+                constraints.unshift(where("userId", "==", userId));
+            }
+
+            constraints.push(limit(pageSize));
+            q = query(q, ...constraints);
+
+            const snapshot = await getDocs(q);
+            const logs = [];
+            snapshot.forEach(d => logs.push({ id: d.id, ...d.data() }));
+
+            // Filter by date in JS since Firestore can't do compound inequalities easily
+            let filtered = logs;
+            if (startDate) {
+                filtered = filtered.filter(l => l.timestamp >= startDate);
+            }
+            if (endDate) {
+                filtered = filtered.filter(l => l.timestamp <= endDate);
+            }
+
+            return filtered;
+        } catch (e) {
+            console.error('getActivityLogs error:', e);
+            return [];
+        }
+    },
+
+    // ==================== USER STATUS MANAGEMENT ====================
+
+    async updateUserStatus(userId, status) {
+        try {
+            await setDoc(doc(db, "users", userId), { accountStatus: status }, { merge: true });
+            await this.logActivity('user_status_change', { targetUserId: userId, newStatus: status });
+        } catch (e) {
+            console.error('updateUserStatus error:', e);
+            throw e;
+        }
+    },
+
+    async updateLastLogin(userId) {
+        try {
+            await setDoc(doc(db, "users", userId), {
+                lastLoginAt: new Date().toISOString(),
+                loginCount: (await this.getUserDoc(userId))?.loginCount + 1 || 1
+            }, { merge: true });
+        } catch (e) {
+            console.error('updateLastLogin error:', e);
+        }
+    },
+
+    // ==================== BULK INVITES ====================
+
+    async sendBulkInvites(emails, farmId, role = 'member') {
+        const results = [];
+        for (const email of emails) {
+            try {
+                const trimmedEmail = email.trim().toLowerCase();
+                if (!trimmedEmail || !trimmedEmail.includes('@')) {
+                    results.push({ email: trimmedEmail, success: false, error: 'Invalid email' });
+                    continue;
+                }
+
+                const inviteId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+                await setDoc(doc(db, "invites", inviteId), {
+                    id: inviteId,
+                    invitedEmail: trimmedEmail,
+                    farmId: farmId,
+                    role: role,
+                    status: 'pending',
+                    createdAt: new Date().toISOString(),
+                    createdBy: FirebaseAuth.getCurrentUser()?.uid || null
+                });
+                results.push({ email: trimmedEmail, success: true });
+            } catch (e) {
+                results.push({ email, success: false, error: e.message });
+            }
+        }
+        await this.logActivity('bulk_invite', { count: emails.length, farmId });
+        return results;
+    },
+
+    // ==================== ANALYTICS ====================
+
+    async getSpreadingStats(period = 'all') {
+        try {
+            const users = await this.getAllUsers();
+            let totalRecords = 0;
+            let totalAcres = 0;
+            let totalRate = 0;
+            let rateCount = 0;
+            const farmActivity = {};
+            const userActivity = {};
+
+            const now = new Date();
+            let startDate = null;
+
+            if (period === 'month') {
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            } else if (period === 'season') {
+                // Current season: spring (Mar-Aug), fall (Sep-Feb)
+                const month = now.getMonth();
+                if (month >= 2 && month <= 7) {
+                    startDate = new Date(now.getFullYear(), 2, 1); // March 1
+                } else if (month >= 8) {
+                    startDate = new Date(now.getFullYear(), 8, 1); // Sep 1
+                } else {
+                    startDate = new Date(now.getFullYear() - 1, 8, 1); // Sep 1 of prev year
+                }
+            } else if (period === 'year') {
+                startDate = new Date(now.getFullYear(), 0, 1);
+            }
+
+            for (const user of users) {
+                try {
+                    const logs = await this.getUserLogs(user.uid);
+                    for (const log of logs) {
+                        if (startDate && new Date(log.timestamp) < startDate) continue;
+
+                        totalRecords++;
+
+                        // Calculate acres from path if available
+                        if (log.path && log.path.length > 0 && log.spreadWidth) {
+                            // Rough estimation: sum of distances * width / 43560 (sq ft per acre)
+                            let pathLength = 0;
+                            for (let i = 1; i < log.path.length; i++) {
+                                const p1 = log.path[i - 1];
+                                const p2 = log.path[i];
+                                pathLength += this.calcDistanceFt(p1.lat, p1.lng, p2.lat, p2.lng);
+                            }
+                            const acres = (pathLength * log.spreadWidth) / 43560;
+                            totalAcres += acres;
+                        }
+
+                        if (log.targetRate) {
+                            totalRate += log.targetRate;
+                            rateCount++;
+                        }
+
+                        // Track by farm
+                        const farmId = user.farmId || 'no-farm';
+                        farmActivity[farmId] = (farmActivity[farmId] || 0) + 1;
+
+                        // Track by user
+                        userActivity[user.uid] = {
+                            email: user.email,
+                            name: user.name,
+                            count: (userActivity[user.uid]?.count || 0) + 1
+                        };
+                    }
+                } catch (e) {
+                    // Skip users with errors
+                }
+            }
+
+            // Get farm names for top farms
+            const topFarms = await Promise.all(
+                Object.entries(farmActivity)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10)
+                    .map(async ([farmId, count]) => {
+                        if (farmId === 'no-farm') return { name: 'No Farm', count };
+                        const farm = await FirebaseFarm.getFarm(farmId);
+                        return { name: farm?.name || 'Unknown', count };
+                    })
+            );
+
+            const topUsers = Object.values(userActivity)
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10);
+
+            return {
+                totalRecords,
+                totalAcres: Math.round(totalAcres * 10) / 10,
+                averageRate: rateCount > 0 ? Math.round(totalRate / rateCount) : 0,
+                topFarms,
+                topUsers
+            };
+        } catch (e) {
+            console.error('getSpreadingStats error:', e);
+            return { totalRecords: 0, totalAcres: 0, averageRate: 0, topFarms: [], topUsers: [] };
+        }
+    },
+
+    calcDistanceFt(lat1, lng1, lat2, lng2) {
+        const R = 20902231; // Earth radius in feet
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    },
+
+    async getSystemStats() {
+        try {
+            const [users, farms] = await Promise.all([
+                this.getAllUsers(),
+                this.getAllFarms()
+            ]);
+
+            let totalFields = 0;
+            let totalRecords = 0;
+
+            for (const farm of farms) {
+                try {
+                    const fields = await FirebaseFarm.getFarmFields(farm.id);
+                    totalFields += fields.length;
+                } catch (e) {}
+            }
+
+            for (const user of users) {
+                try {
+                    const logs = await this.getUserLogs(user.uid);
+                    totalRecords += logs.length;
+                } catch (e) {}
+            }
+
+            return {
+                userCount: users.length,
+                farmCount: farms.length,
+                fieldCount: totalFields,
+                recordCount: totalRecords
+            };
+        } catch (e) {
+            console.error('getSystemStats error:', e);
+            return { userCount: 0, farmCount: 0, fieldCount: 0, recordCount: 0 };
+        }
+    },
+
+    // ==================== GLOBAL SEARCH ====================
+
+    async globalSearch(queryStr) {
+        const results = { users: [], farms: [], fields: [] };
+        const q = queryStr.toLowerCase().trim();
+        if (!q) return results;
+
+        try {
+            // Search users
+            const users = await this.getAllUsers();
+            results.users = users.filter(u =>
+                (u.email && u.email.toLowerCase().includes(q)) ||
+                (u.name && u.name.toLowerCase().includes(q))
+            ).slice(0, 10);
+
+            // Search farms
+            const farms = await this.getAllFarms();
+            results.farms = farms.filter(f =>
+                f.name && f.name.toLowerCase().includes(q)
+            ).slice(0, 10);
+
+            // Search fields across all farms
+            for (const farm of farms) {
+                try {
+                    const fields = await FirebaseFarm.getFarmFields(farm.id);
+                    const matching = fields.filter(f =>
+                        f.name && f.name.toLowerCase().includes(q)
+                    ).map(f => ({ ...f, farmId: farm.id, farmName: farm.name }));
+                    results.fields.push(...matching);
+                } catch (e) {}
+            }
+            results.fields = results.fields.slice(0, 10);
+
+        } catch (e) {
+            console.error('globalSearch error:', e);
+        }
+
+        return results;
+    },
+
+    // ==================== ANNOUNCEMENTS ====================
+
+    async createAnnouncement(data) {
+        try {
+            const announcementId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+            const announcement = {
+                id: announcementId,
+                title: data.title,
+                message: data.message,
+                type: data.type || 'info', // info, feature, warning, maintenance
+                priority: data.priority || 0,
+                active: true,
+                dismissible: data.dismissible !== false,
+                createdAt: new Date().toISOString(),
+                expiresAt: data.expiresAt || null,
+                createdBy: FirebaseAuth.getCurrentUser()?.uid || null
+            };
+            await setDoc(doc(db, "announcements", announcementId), announcement);
+            await this.logActivity('announcement_create', { announcementId, title: data.title });
+            return announcement;
+        } catch (e) {
+            console.error('createAnnouncement error:', e);
+            throw e;
+        }
+    },
+
+    async getActiveAnnouncements() {
+        try {
+            const q = query(
+                collection(db, "announcements"),
+                where("active", "==", true),
+                orderBy("priority", "desc")
+            );
+            const snapshot = await getDocs(q);
+            const announcements = [];
+            const now = new Date().toISOString();
+
+            snapshot.forEach(d => {
+                const data = d.data();
+                // Filter out expired announcements
+                if (!data.expiresAt || data.expiresAt > now) {
+                    announcements.push(data);
+                }
+            });
+
+            return announcements;
+        } catch (e) {
+            console.error('getActiveAnnouncements error:', e);
+            return [];
+        }
+    },
+
+    async getAllAnnouncements() {
+        try {
+            const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
+            const snapshot = await getDocs(q);
+            const announcements = [];
+            snapshot.forEach(d => announcements.push(d.data()));
+            return announcements;
+        } catch (e) {
+            console.error('getAllAnnouncements error:', e);
+            return [];
+        }
+    },
+
+    async updateAnnouncement(announcementId, data) {
+        try {
+            await setDoc(doc(db, "announcements", announcementId), {
+                ...data,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            await this.logActivity('announcement_update', { announcementId });
+        } catch (e) {
+            console.error('updateAnnouncement error:', e);
+            throw e;
+        }
+    },
+
+    async deleteAnnouncement(announcementId) {
+        try {
+            await deleteDoc(doc(db, "announcements", announcementId));
+            await this.logActivity('announcement_delete', { announcementId });
+        } catch (e) {
+            console.error('deleteAnnouncement error:', e);
+            throw e;
+        }
+    },
+
+    // ==================== APP SETTINGS ====================
+
+    async getAppSettings() {
+        try {
+            const snap = await getDoc(doc(db, "config", "settings"));
+            if (snap.exists()) {
+                return snap.data();
+            }
+            // Return defaults
+            return {
+                defaultSpreadWidth: 50,
+                rateUnits: 'gal/ac',
+                seasonBoundaries: {
+                    spring: { month: 3 },
+                    fall: { month: 9 }
+                }
+            };
+        } catch (e) {
+            console.error('getAppSettings error:', e);
+            return {
+                defaultSpreadWidth: 50,
+                rateUnits: 'gal/ac',
+                seasonBoundaries: { spring: { month: 3 }, fall: { month: 9 } }
+            };
+        }
+    },
+
+    async updateAppSettings(settings) {
+        try {
+            await setDoc(doc(db, "config", "settings"), {
+                ...settings,
+                updatedAt: new Date().toISOString(),
+                updatedBy: FirebaseAuth.getCurrentUser()?.uid || null
+            }, { merge: true });
+            await this.logActivity('settings_update', { settings });
+        } catch (e) {
+            console.error('updateAppSettings error:', e);
+            throw e;
         }
     }
 };

@@ -62,6 +62,7 @@ const Tracking = {
             email: email,
             action: 'new_account'
         });
+        this.logToFirestore('registration', { email });
     },
 
     // Track user login
@@ -70,6 +71,33 @@ const Tracking = {
             email: email,
             action: 'login'
         });
+        // Also log to Firestore and update last login
+        this.logToFirestore('login', { email });
+    },
+
+    // Log to Firestore activity log
+    async logToFirestore(eventType, details = {}) {
+        if (typeof FirebaseAdmin !== 'undefined' && FirebaseAdmin.logActivity) {
+            try {
+                await FirebaseAdmin.logActivity(eventType, details);
+            } catch (e) {
+                console.log('Firestore logging error:', e);
+            }
+        }
+    },
+
+    // Update last login in Firestore
+    async updateLastLogin() {
+        if (typeof FirebaseAdmin !== 'undefined' && FirebaseAdmin.updateLastLogin && typeof FirebaseAuth !== 'undefined') {
+            const user = FirebaseAuth.getCurrentUser();
+            if (user) {
+                try {
+                    await FirebaseAdmin.updateLastLogin(user.uid);
+                } catch (e) {
+                    console.log('Update last login error:', e);
+                }
+            }
+        }
     },
 
     // Track spreading session start
@@ -79,18 +107,24 @@ const Tracking = {
             spreadWidth: settings.spreadWidth,
             action: 'start_spreading'
         });
+        this.logToFirestore('spreading_start', {
+            targetRate: settings.targetRate,
+            spreadWidth: settings.spreadWidth
+        });
     },
 
     // Track spreading session end
     trackSpreadingEnd(log) {
-        this.trackEvent('spreading_end', {
+        const details = {
             duration: log.endTime && log.timestamp ?
                 (new Date(log.endTime) - new Date(log.timestamp)) / 1000 / 60 : 0, // minutes
             pointCount: log.path ? log.path.length : 0,
             targetRate: log.targetRate,
             spreadWidth: log.spreadWidth,
             action: 'stop_spreading'
-        });
+        };
+        this.trackEvent('spreading_end', details);
+        this.logToFirestore('spreading_end', details);
     },
 
     // Track export
@@ -100,6 +134,7 @@ const Tracking = {
             logCount: logCount,
             action: 'export_data'
         });
+        this.logToFirestore('export', { format, logCount });
     },
 
     // Track app open

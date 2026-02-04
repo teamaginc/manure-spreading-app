@@ -142,13 +142,22 @@ const App = {
                 if (typeof FarmProfile !== 'undefined') {
                     FarmProfile.checkPendingInvites();
                 }
+                // Check for announcements
+                this.checkAndShowAnnouncements();
             } else {
                 console.log('User logged out');
                 document.body.classList.remove('has-sidebar');
                 this.hideAdminButton();
+                this.hideAnnouncement();
                 this.showScreen('login-screen');
             }
         });
+
+        // Setup announcement dismiss button
+        const dismissBtn = document.getElementById('dismiss-announcement');
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', () => this.dismissAnnouncement());
+        }
 
         // Show loading state initially, Firebase will trigger auth state change
         this.showScreen('login-screen');
@@ -1012,6 +1021,83 @@ const App = {
         if (btn) btn.classList.add('hidden');
         const sidebarBtn = document.getElementById('sidebar-admin-panel');
         if (sidebarBtn) sidebarBtn.classList.add('hidden');
+    },
+
+    currentAnnouncementId: null,
+    dismissedAnnouncements: JSON.parse(localStorage.getItem('dismissedAnnouncements') || '[]'),
+
+    async checkAndShowAnnouncements() {
+        if (!window.FirebaseAdmin) return;
+
+        try {
+            const announcements = await FirebaseAdmin.getActiveAnnouncements();
+            if (!announcements || announcements.length === 0) {
+                this.hideAnnouncement();
+                return;
+            }
+
+            // Find first non-dismissed announcement
+            const announcement = announcements.find(a =>
+                !this.dismissedAnnouncements.includes(a.id) || !a.dismissible
+            );
+
+            if (announcement) {
+                this.showAnnouncement(announcement);
+            } else {
+                this.hideAnnouncement();
+            }
+        } catch (e) {
+            console.error('Failed to check announcements:', e);
+        }
+    },
+
+    showAnnouncement(announcement) {
+        const banner = document.getElementById('announcement-banner');
+        const icon = banner.querySelector('.announcement-banner-icon');
+        const text = banner.querySelector('.announcement-banner-text');
+        const dismissBtn = document.getElementById('dismiss-announcement');
+
+        if (!banner) return;
+
+        // Set content
+        const icons = {
+            'info': 'ℹ️',
+            'feature': '✨',
+            'warning': '⚠️',
+            'maintenance': '🔧'
+        };
+        icon.textContent = icons[announcement.type] || 'ℹ️';
+        text.innerHTML = `<strong>${announcement.title}</strong> ${announcement.message}`;
+
+        // Set type class for styling
+        banner.className = 'announcement-banner';
+        banner.classList.add(`announcement-type-${announcement.type || 'info'}`);
+
+        // Show/hide dismiss button
+        if (dismissBtn) {
+            dismissBtn.style.display = announcement.dismissible ? '' : 'none';
+        }
+
+        this.currentAnnouncementId = announcement.id;
+        banner.classList.remove('hidden');
+    },
+
+    hideAnnouncement() {
+        const banner = document.getElementById('announcement-banner');
+        if (banner) {
+            banner.classList.add('hidden');
+        }
+        this.currentAnnouncementId = null;
+    },
+
+    dismissAnnouncement() {
+        if (this.currentAnnouncementId) {
+            this.dismissedAnnouncements.push(this.currentAnnouncementId);
+            localStorage.setItem('dismissedAnnouncements', JSON.stringify(this.dismissedAnnouncements));
+        }
+        this.hideAnnouncement();
+        // Check for next announcement
+        setTimeout(() => this.checkAndShowAnnouncements(), 100);
     },
 
     desktopFarmMap: null,
