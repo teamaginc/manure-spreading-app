@@ -283,11 +283,12 @@
         <div class="screen-content">
             <div class="admin-stats">
                 <div class="stat-card"><div class="stat-value" id="stat-total-farmers">0</div><div class="stat-label">Farmers</div></div>
+                <div class="stat-card"><div class="stat-value" id="stat-total-farms">0</div><div class="stat-label">Farms</div></div>
                 <div class="stat-card"><div class="stat-value" id="stat-total-admins">0</div><div class="stat-label">Admins</div></div>
-                <div class="stat-card"><div class="stat-value" id="stat-shapefiles-enabled">0</div><div class="stat-label">Shapefiles On</div></div>
             </div>
             <div class="admin-actions">
                 <button class="btn btn-primary btn-large" id="admin-manage-farmers">Manage Farmers</button>
+                <button class="btn btn-primary btn-large" id="admin-manage-farms" style="background:#546e7a;">Manage Farms</button>
                 <button class="btn btn-secondary btn-large" id="admin-feature-toggles">Feature Toggles</button>
             </div>
         </div>
@@ -550,6 +551,73 @@
                     <span class="toggle-switch"></span>
                 </label>
                 <p class="toggle-description">When enabled globally, farmers with individual toggle on will see field boundaries on their map.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Farm List Screen (Admin) -->
+    <div id="farm-list-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="admin-dashboard-screen">← Back</button>
+            <h2>Manage Farms</h2>
+        </div>
+        <div class="screen-content">
+            <input type="text" id="farm-search" class="farmer-search-input" placeholder="Search farms...">
+            <div id="farm-list-container" class="farmer-list"></div>
+        </div>
+    </div>
+
+    <!-- Farm Detail Screen (Admin) -->
+    <div id="farm-detail-screen" class="screen">
+        <div class="screen-header">
+            <button class="btn-back" data-screen="farm-list-screen">← Back</button>
+            <h2>Farm Details</h2>
+        </div>
+        <div class="screen-content">
+            <div class="farmer-detail-header">
+                <h3 id="farm-detail-name">Farm Name</h3>
+                <div class="farmer-detail-meta">
+                    <span>Created: <span id="farm-detail-created">-</span></span>
+                </div>
+            </div>
+
+            <!-- Farm Members Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Farm Members</h3>
+                <div id="farm-detail-members-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">Loading members...</p>
+                </div>
+            </div>
+
+            <!-- Farm Fields Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Fields</h3>
+                <button class="btn btn-secondary" id="farm-detail-view-map-btn" style="width:100%;margin-bottom:12px;">View Fields on Map</button>
+                <div id="farm-detail-fields-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">Loading fields...</p>
+                </div>
+            </div>
+
+            <!-- Farm Equipment Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Equipment</h3>
+                <div id="farm-detail-equipment-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">Loading equipment...</p>
+                </div>
+            </div>
+
+            <!-- Farm Storages Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Manure Storages</h3>
+                <div id="farm-detail-storage-list" class="fields-list">
+                    <p style="padding:12px;color:#666;">Loading storages...</p>
+                </div>
+            </div>
+
+            <!-- Spreading Records Section -->
+            <div class="admin-farm-section">
+                <h3 class="farm-section-title">Spreading Records</h3>
+                <button class="btn btn-primary" id="farm-detail-view-records-btn" style="width:100%;">View All Records</button>
             </div>
         </div>
     </div>
