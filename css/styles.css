@@ -1075,24 +1075,6 @@ input[type="number"] {
     white-space: nowrap;
 }
 
-/* Farm selector row inside table panel */
-.records-farm-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: #e8f5e9;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.records-farm-selector {
-    flex: 1;
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    font-size: 0.9rem;
-    background: var(--bg-card);
-}
 
 
 /* Past Records Map */
@@ -1144,11 +1126,6 @@ input[type="number"] {
     max-height: 70%;
     height: 40%; /* Default height */
     flex-shrink: 0;
-}
-
-/* Farm selector takes full width of its row */
-.records-farm-selector {
-    width: 100%;
 }
 
 .records-filters {

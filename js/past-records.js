@@ -471,10 +471,8 @@ const PastRecords = {
             selector.innerHTML = this.userFarms.map(f =>
                 `<option value="${f.id}" ${f.id === this.currentFarmId ? 'selected' : ''}>${f.name || 'Unnamed Farm'}</option>`
             ).join('');
-            selector.classList.remove('hidden');
         } else if (this.currentFarmName) {
             selector.innerHTML = `<option value="${this.currentFarmId}">${this.currentFarmName}</option>`;
-            selector.classList.remove('hidden');
         }
     },
 
