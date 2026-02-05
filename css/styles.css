@@ -1094,11 +1094,6 @@ input[type="number"] {
     background: var(--bg-card);
 }
 
-.records-farm-name-label {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--primary-green);
-}
 
 /* Past Records Map */
 .past-records-map {
@@ -1151,9 +1146,9 @@ input[type="number"] {
     flex-shrink: 0;
 }
 
-.records-farm-icon {
-    font-size: 1rem;
-    flex-shrink: 0;
+/* Farm selector takes full width of its row */
+.records-farm-selector {
+    width: 100%;
 }
 
 .records-filters {
