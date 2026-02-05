@@ -38,11 +38,88 @@ const PastRecords = {
 
         this.isInitialized = true;
         this.setupFilterListeners();
+        this.setupResizeHandle();
 
         await this.loadData();
         this.renderFields();
         this.populateFilters();
         this.renderTable();
+    },
+
+    setupResizeHandle() {
+        const handle = document.getElementById('records-resize-handle');
+        const panel = document.getElementById('records-table-panel');
+        const screen = document.getElementById('past-records-screen');
+
+        if (!handle || !panel || !screen) return;
+
+        let isDragging = false;
+        let startY = 0;
+        let startHeight = 0;
+
+        const onStart = (e) => {
+            isDragging = true;
+            startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            startHeight = panel.offsetHeight;
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        };
+
+        const onMove = (e) => {
+            if (!isDragging) return;
+
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            const deltaY = startY - clientY; // Negative when dragging down, positive when dragging up
+            const newHeight = startHeight + deltaY;
+
+            // Get screen bounds (excluding header)
+            const header = screen.querySelector('.screen-header');
+            const headerHeight = header ? header.offsetHeight : 0;
+            const availableHeight = screen.offsetHeight - headerHeight - 24; // 24 for handle height
+
+            // Constrain height: min 120px, max 70% of available space
+            const minHeight = 120;
+            const maxHeight = availableHeight * 0.7;
+            const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+            panel.style.height = clampedHeight + 'px';
+
+            // Invalidate map size since container changed
+            if (this.map) {
+                this.map.invalidateSize();
+            }
+        };
+
+        const onEnd = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+
+            // Save preference to localStorage
+            const heightPercent = (panel.offsetHeight / screen.offsetHeight * 100).toFixed(1);
+            localStorage.setItem('pastRecordsPanelHeight', heightPercent);
+        };
+
+        // Mouse events
+        handle.addEventListener('mousedown', onStart);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+
+        // Touch events
+        handle.addEventListener('touchstart', onStart, { passive: false });
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+
+        // Restore saved height preference
+        const savedHeight = localStorage.getItem('pastRecordsPanelHeight');
+        if (savedHeight) {
+            const height = (parseFloat(savedHeight) / 100) * screen.offsetHeight;
+            if (height >= 120) {
+                panel.style.height = height + 'px';
+            }
+        }
     },
 
     setupFilterListeners() {
