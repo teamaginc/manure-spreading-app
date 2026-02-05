@@ -395,16 +395,21 @@ const PastRecords = {
             const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
 
             if (!farmId) {
-                if (!user || !window.FirebaseFarm) {
-                    console.warn('PastRecords: No user or FirebaseFarm');
+                if (!user) {
+                    console.warn('PastRecords: No user logged in');
                     return;
                 }
 
-                // Wait for FirebaseAdmin
+                // Wait for Firebase modules to load (ES module timing)
                 let attempts = 0;
-                while (!window.FirebaseAdmin && attempts < 20) {
-                    await new Promise(r => setTimeout(r, 100));
+                while ((!window.FirebaseFarm || !window.FirebaseAdmin) && attempts < 30) {
+                    await new Promise(r => setTimeout(r, 150));
                     attempts++;
+                }
+
+                if (!window.FirebaseFarm || !window.FirebaseAdmin) {
+                    console.warn('PastRecords: Firebase modules not available after waiting');
+                    return;
                 }
 
                 // Get all farms user has access to
