@@ -15,6 +15,11 @@ const SpreadingTracker = {
     totalDistanceMeters: 0,
     equipmentCapacity: null,
     loadCount: 0,
+    // Outlier filtering
+    maxSpeedMps: 15, // Max plausible tractor speed: ~33 mph / 15 m/s
+    maxAccuracyMeters: 80, // Reject GPS fixes worse than this
+    consecutiveRejections: 0,
+    maxConsecutiveRejections: 5, // Accept after this many rejections (assume real movement)
     // Field tracking
     currentFieldId: null,
     currentFieldName: null,
@@ -37,6 +42,7 @@ const SpreadingTracker = {
         this.lastPosition = null;
         this.currentSpeed = 0;
         this.totalDistanceMeters = 0;
+        this.consecutiveRejections = 0;
 
         // Initialize the current log
         this.currentLog = {
@@ -109,17 +115,31 @@ const SpreadingTracker = {
         if (speed !== null && !isNaN(speed)) {
             this.currentSpeed = speed * 2.237; // m/s to mph
         } else if (this.lastPosition) {
-            // Calculate speed from positions if not provided
-            const timeDiff = (Date.now() - this.lastPosition.time) / 1000; // seconds
+            const timeDiff = (Date.now() - this.lastPosition.time) / 1000;
             if (timeDiff > 0) {
                 const distance = this.calculateDistance(
                     this.lastPosition.lat, this.lastPosition.lng,
                     latitude, longitude
                 );
-                this.currentSpeed = (distance / timeDiff) * 2.237; // m/s to mph
+                this.currentSpeed = (distance / timeDiff) * 2.237;
             }
         }
         this.updateSpeedDisplay(this.currentSpeed);
+
+        // Check if this point is a GPS outlier
+        if (this.isOutlierPoint(latitude, longitude, accuracy)) {
+            this.consecutiveRejections++;
+            // Still update tractor marker so user sees GPS state, but don't record
+            if (this.consecutiveRejections <= this.maxConsecutiveRejections) {
+                this.updateGpsStatus('active', `GPS (±${Math.round(accuracy)}m) - filtering`);
+                return;
+            }
+            // Too many rejections - accept the point (tractor probably really moved)
+            console.log('GPS: Accepting point after', this.consecutiveRejections, 'consecutive rejections');
+            this.consecutiveRejections = 0;
+        } else {
+            this.consecutiveRejections = 0;
+        }
 
         // Update tractor position on map
         MapManager.setTractorPosition(latitude, longitude, this.tractorColor);
@@ -159,6 +179,36 @@ const SpreadingTracker = {
             // Update calculated rate display
             this.updateCalcRateDisplay();
         }
+    },
+
+    isOutlierPoint(lat, lng, accuracy) {
+        // Reject points with very poor GPS accuracy
+        if (accuracy && accuracy > this.maxAccuracyMeters) {
+            return true;
+        }
+
+        // Can't check speed if no previous position
+        if (!this.lastPosition) {
+            return false;
+        }
+
+        // Check implied speed between last valid point and this one
+        const distance = this.calculateDistance(
+            this.lastPosition.lat, this.lastPosition.lng,
+            lat, lng
+        );
+        const timeDiff = (Date.now() - this.lastPosition.time) / 1000; // seconds
+
+        if (timeDiff <= 0) return false;
+
+        const impliedSpeed = distance / timeDiff; // m/s
+
+        if (impliedSpeed > this.maxSpeedMps) {
+            console.log(`GPS outlier rejected: ${distance.toFixed(0)}m in ${timeDiff.toFixed(1)}s = ${(impliedSpeed * 2.237).toFixed(1)}mph (max ${(this.maxSpeedMps * 2.237).toFixed(0)}mph)`);
+            return true;
+        }
+
+        return false;
     },
 
     shouldAddPoint(lat, lng) {
