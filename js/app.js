@@ -1043,7 +1043,7 @@ const App = {
 
                     // Center map on tractor if first position (or no fields yet)
                     if (!this.setupMapCentered) {
-                        this.setupMap.setView([latitude, longitude], 16);
+                        this.setupMap.setView([latitude, longitude], 18);
                         this.setupMapCentered = true;
                     }
                 }

@@ -1205,21 +1205,23 @@
 
     <!-- Past Records Screen -->
     <div id="past-records-screen" class="screen">
-        <div class="screen-header">
-            <button class="btn-back" id="past-records-back-btn">← Back</button>
-            <div class="past-records-header-center">
-                <h2>Past Records</h2>
-                <span id="past-records-farm-name" class="past-records-farm-label"></span>
-            </div>
-            <select id="past-records-farm-select" class="past-records-farm-select hidden"></select>
-            <button class="btn btn-primary" id="past-records-export-all" style="padding:8px 12px;font-size:0.85rem;">Export All</button>
+        <div class="screen-header past-records-header">
+            <button class="btn-back past-records-back-btn" id="past-records-back-btn">← Back</button>
+            <h2>Past Records</h2>
+            <button class="btn btn-primary past-records-export-btn" id="past-records-export-all">Export All</button>
         </div>
         <div id="past-records-map" class="past-records-map"></div>
         <div id="records-resize-handle" class="records-resize-handle">
             <div class="resize-handle-bar"></div>
         </div>
         <div id="records-table-panel" class="records-table-panel">
-            <p class="records-nav-hint">Navigate records through the table or by selecting a field on the map above.</p>
+            <div class="records-farm-row" id="records-farm-row">
+                <span class="records-farm-icon">🏡</span>
+                <select id="past-records-farm-select" class="records-farm-selector hidden">
+                    <option value="">Select farm...</option>
+                </select>
+                <span id="past-records-farm-name" class="records-farm-name-label"></span>
+            </div>
             <div class="records-filters">
                 <select id="filter-year"><option value="">All Years</option></select>
                 <select id="filter-season"><option value="">All Seasons</option></select>

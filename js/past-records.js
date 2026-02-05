@@ -464,20 +464,23 @@ const PastRecords = {
     },
 
     updateFarmIndicator() {
-        const indicator = document.getElementById('past-records-farm-name');
-        if (indicator) {
-            indicator.textContent = this.currentFarmName || '';
-        }
-
-        // Populate farm selector if multiple farms
+        const label = document.getElementById('past-records-farm-name');
         const selector = document.getElementById('past-records-farm-select');
-        if (selector && this.userFarms.length > 1) {
+
+        if (this.userFarms.length > 1 && selector) {
+            // Multiple farms - show dropdown, hide label
             selector.innerHTML = this.userFarms.map(f =>
                 `<option value="${f.id}" ${f.id === this.currentFarmId ? 'selected' : ''}>${f.name || 'Unnamed Farm'}</option>`
             ).join('');
             selector.classList.remove('hidden');
-        } else if (selector) {
-            selector.classList.add('hidden');
+            if (label) label.style.display = 'none';
+        } else {
+            // Single farm - show label, hide dropdown
+            if (label) {
+                label.textContent = this.currentFarmName || '';
+                label.style.display = '';
+            }
+            if (selector) selector.classList.add('hidden');
         }
     },
 
