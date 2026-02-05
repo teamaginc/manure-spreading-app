@@ -366,28 +366,42 @@ html, body {
 }
 
 .setup-form-panel {
-    padding: 16px;
+    padding: 10px 12px;
     background: var(--bg-card);
     border-top: 1px solid var(--border-color);
-    max-height: 50%;
-    overflow-y: auto;
+    flex-shrink: 0;
 }
 
 .setup-form-panel .form-group {
-    margin-bottom: 12px;
+    margin-bottom: 6px;
+}
+
+.setup-form-panel .form-group label {
+    font-size: 0.8rem;
+    margin-bottom: 2px;
 }
 
 .setup-form-panel .form-row {
     display: flex;
-    gap: 12px;
+    gap: 8px;
 }
 
 .setup-form-panel .form-group-half {
     flex: 1;
 }
 
+.setup-form-panel select,
+.setup-form-panel input {
+    min-height: 40px;
+    font-size: 0.95rem;
+    padding: 6px 10px;
+}
+
 .btn-record {
-    margin-top: 16px;
+    margin-top: 8px;
+    padding: 14px 24px;
+    font-size: 1.1rem;
+    min-height: 50px;
     background-color: var(--success-green);
     width: 100%;
 }

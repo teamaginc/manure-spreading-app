@@ -143,43 +143,45 @@
         </div>
         <div id="setup-map" class="setup-map"></div>
         <div class="setup-form-panel">
-            <div class="form-group" id="setup-farm-group">
-                <label for="setup-farm">Farm</label>
-                <select id="setup-farm" class="select-large">
-                    <option value="">Select farm...</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="setup-field">Field</label>
-                <select id="setup-field" class="select-large">
-                    <option value="">No Field (optional)</option>
-                </select>
+            <div class="form-row">
+                <div class="form-group form-group-half" id="setup-farm-group">
+                    <label for="setup-farm">Farm</label>
+                    <select id="setup-farm">
+                        <option value="">Select farm...</option>
+                    </select>
+                </div>
+                <div class="form-group form-group-half">
+                    <label for="setup-field">Field</label>
+                    <select id="setup-field">
+                        <option value="">No Field</option>
+                    </select>
+                </div>
             </div>
             <div class="form-row">
                 <div class="form-group form-group-half">
                     <label for="setup-equipment">Equipment</label>
-                    <select id="setup-equipment" class="select-large">
-                        <option value="">Select equipment...</option>
+                    <select id="setup-equipment">
+                        <option value="">Select...</option>
                     </select>
                 </div>
                 <div class="form-group form-group-half">
-                    <label for="setup-storage">Manure Storage</label>
-                    <select id="setup-storage" class="select-large">
-                        <option value="">Select storage...</option>
+                    <label for="setup-storage">Storage</label>
+                    <select id="setup-storage">
+                        <option value="">Select...</option>
                     </select>
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group form-group-half">
-                    <label for="target-rate">Target Rate (gal/ac)</label>
-                    <input type="number" id="target-rate" class="input-large" placeholder="e.g., 5000" min="0" step="100">
+                    <label for="target-rate">Rate (gal/ac)</label>
+                    <input type="number" id="target-rate" placeholder="5000" min="0" step="100">
                 </div>
                 <div class="form-group form-group-half">
                     <label for="spread-width">Width (ft)</label>
-                    <input type="number" id="spread-width" class="input-large" placeholder="e.g., 50" min="1" step="1" value="50">
+                    <input type="number" id="spread-width" placeholder="50" min="1" step="1" value="50">
                 </div>
             </div>
-            <button id="start-spreading" class="btn btn-primary btn-xlarge btn-record">
+            <button id="start-spreading" class="btn btn-primary btn-record">
                 Record Spread
             </button>
         </div>
