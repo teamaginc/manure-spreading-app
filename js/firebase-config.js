@@ -979,6 +979,39 @@ const FirebaseFarm = {
         await setDoc(doc(db, "farms", farmId), { name }, { merge: true });
     },
 
+    async deleteFarm(farmId) {
+        try {
+            // Delete all subcollections: fields, equipment, storages, members
+            const subcollections = ['fields', 'equipment', 'storages', 'members'];
+            for (const sub of subcollections) {
+                const snapshot = await getDocs(collection(db, "farms", farmId, sub));
+                for (const d of snapshot.docs) {
+                    await deleteDoc(doc(db, "farms", farmId, sub, d.id));
+                }
+            }
+
+            // Clear farmId from any users that reference this farm
+            const usersSnapshot = await getDocs(collection(db, "users"));
+            for (const userDoc of usersSnapshot.docs) {
+                const data = userDoc.data();
+                if (data.farmId === farmId) {
+                    await setDoc(doc(db, "users", userDoc.id), { farmId: '' }, { merge: true });
+                }
+            }
+
+            // Delete the farm document itself
+            await deleteDoc(doc(db, "farms", farmId));
+
+            // Log activity
+            if (window.FirebaseAdmin) {
+                await FirebaseAdmin.logActivity('farm_delete', { farmId });
+            }
+        } catch (e) {
+            console.error('deleteFarm error:', e);
+            throw e;
+        }
+    },
+
     // Members
     async addMember(farmId, memberData) {
         await setDoc(doc(db, "farms", farmId, "members", memberData.userId), {

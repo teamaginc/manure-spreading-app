@@ -8,6 +8,9 @@ const PastRecords = {
     allLogs: [],
     allFields: [],
     farmMembers: [],
+    currentFarmId: null,
+    currentFarmName: null,
+    userFarms: [],
     selectedField: null,
     selectedFieldLogs: [],
     selectedLogId: null,
@@ -129,6 +132,14 @@ const PastRecords = {
                 el.addEventListener('change', () => this.renderTable());
             }
         });
+
+        // Farm selector
+        const farmSelect = document.getElementById('past-records-farm-select');
+        if (farmSelect) {
+            farmSelect.addEventListener('change', () => {
+                this.switchFarm(farmSelect.value);
+            });
+        }
     },
 
     populateFilters() {
@@ -385,28 +396,108 @@ const PastRecords = {
             if (!farmId) {
                 const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
                 if (!user || !window.FirebaseFarm) return;
-                const farm = await FirebaseFarm.getFarmByUser(user.uid);
-                if (!farm) return;
-                farmId = farm.id;
+
+                // Wait for FirebaseAdmin
+                let attempts = 0;
+                while (!window.FirebaseAdmin && attempts < 20) {
+                    await new Promise(r => setTimeout(r, 100));
+                    attempts++;
+                }
+
+                // Get all farms user has access to
+                if (window.FirebaseAdmin) {
+                    this.userFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
+                }
+
+                // Use saved farm preference, or first available farm
+                const savedFarmId = localStorage.getItem('pastRecordsFarmId');
+                if (savedFarmId && this.userFarms.some(f => f.id === savedFarmId)) {
+                    farmId = savedFarmId;
+                } else if (this.userFarms.length > 0) {
+                    farmId = this.userFarms[0].id;
+                } else {
+                    // Fallback to user's own farm
+                    const farm = await FirebaseFarm.getFarmByUser(user.uid);
+                    if (!farm) return;
+                    farmId = farm.id;
+                }
             }
 
-            // Load fields, logs, and members in parallel
-            const logsPromise = userId && window.FirebaseAdmin
-                ? FirebaseAdmin.getUserLogs(userId)
-                : (window.FirebaseDB || StorageDB).getAllLogs();
+            this.currentFarmId = farmId;
 
-            const [fields, logs, members] = await Promise.all([
+            // Load fields and members
+            const [fields, members] = await Promise.all([
                 FirebaseFarm.getFarmFields(farmId),
-                logsPromise,
                 FirebaseFarm.getMembers(farmId)
             ]);
 
             this.allFields = fields;
-            this.allLogs = logs;
             this.farmMembers = members;
+
+            // Get farm name
+            const farm = await FirebaseFarm.getFarm(farmId);
+            this.currentFarmName = farm?.name || 'Unknown Farm';
+
+            // Load logs from ALL farm members (or specific user if admin-scoped)
+            if (userId && window.FirebaseAdmin) {
+                this.allLogs = await FirebaseAdmin.getUserLogs(userId);
+            } else {
+                // Load logs from all members of the farm
+                const allLogs = [];
+                for (const member of members) {
+                    if (!member.userId) continue;
+                    try {
+                        const memberLogs = await FirebaseAdmin.getUserLogs(member.userId);
+                        allLogs.push(...memberLogs);
+                    } catch (e) {
+                        console.warn('Could not load logs for member:', member.userId, e);
+                    }
+                }
+                this.allLogs = allLogs;
+            }
+
+            // Update the farm indicator in the header
+            this.updateFarmIndicator();
         } catch (e) {
             console.error('PastRecords loadData error:', e);
         }
+    },
+
+    updateFarmIndicator() {
+        const indicator = document.getElementById('past-records-farm-name');
+        if (indicator) {
+            indicator.textContent = this.currentFarmName || '';
+        }
+
+        // Populate farm selector if multiple farms
+        const selector = document.getElementById('past-records-farm-select');
+        if (selector && this.userFarms.length > 1) {
+            selector.innerHTML = this.userFarms.map(f =>
+                `<option value="${f.id}" ${f.id === this.currentFarmId ? 'selected' : ''}>${f.name || 'Unnamed Farm'}</option>`
+            ).join('');
+            selector.classList.remove('hidden');
+        } else if (selector) {
+            selector.classList.add('hidden');
+        }
+    },
+
+    async switchFarm(farmId) {
+        if (farmId === this.currentFarmId) return;
+        localStorage.setItem('pastRecordsFarmId', farmId);
+
+        // Reset state
+        this.clearPaths();
+        this.fieldLayers.forEach(l => this.map.removeLayer(l));
+        this.fieldLayers = [];
+        this.allLogs = [];
+        this.allFields = [];
+        this.selectedLogId = null;
+
+        this.currentFarmId = farmId;
+        await this.loadData();
+        this.renderFields();
+        this.populateFilters();
+        this.renderTable();
     },
 
     renderFields() {
@@ -670,6 +761,10 @@ const PastRecords = {
         this.pathLayers = [];
         this.allLogs = [];
         this.allFields = [];
+        this.farmMembers = [];
+        this.currentFarmId = null;
+        this.currentFarmName = null;
+        this.userFarms = [];
         this.selectedFieldLogs = [];
         this.selectedLogId = null;
         this.adminFarmId = null;

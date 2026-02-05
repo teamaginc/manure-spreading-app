@@ -99,6 +99,12 @@ const FarmProfile = {
         if (inviteCancel) {
             inviteCancel.addEventListener('click', () => this.hideInviteModal());
         }
+
+        // Delete farm
+        const deleteFarmBtn = document.getElementById('delete-farm-btn');
+        if (deleteFarmBtn) {
+            deleteFarmBtn.addEventListener('click', () => this.confirmDeleteFarm());
+        }
     },
 
     async load() {
@@ -106,7 +112,28 @@ const FarmProfile = {
         if (!user) return;
 
         await this.ensureFarm();
-        if (!this.currentFarm) return;
+
+        // Toggle between no-farm and farm views
+        const noFarmSection = document.getElementById('farm-no-farm-section');
+        const farmContent = document.getElementById('farm-content-sections');
+        const dangerZone = document.getElementById('farm-danger-zone');
+
+        if (!this.currentFarm) {
+            // Show "no farm" state with create button
+            if (noFarmSection) noFarmSection.classList.remove('hidden');
+            if (farmContent) farmContent.classList.add('hidden');
+            if (dangerZone) dangerZone.classList.add('hidden');
+            return;
+        }
+
+        if (noFarmSection) noFarmSection.classList.add('hidden');
+        if (farmContent) farmContent.classList.remove('hidden');
+
+        // Only show danger zone to farm owner
+        const members = await FirebaseFarm.getMembers(this.currentFarm.id);
+        const currentMember = members.find(m => m.userId === user.uid);
+        const isOwner = currentMember?.role === 'owner';
+        if (dangerZone) dangerZone.classList.toggle('hidden', !isOwner);
 
         // Load farm name
         const nameInput = document.getElementById('farm-name-input');
@@ -132,18 +159,10 @@ const FarmProfile = {
                 return;
             }
 
-            // Auto-create farm
-            const userName = user.name || user.email.split('@')[0];
-            const farmId = await FirebaseFarm.createFarm(userName + "'s Farm", user.uid);
-            await FirebaseFarm.addMember(farmId, {
-                userId: user.uid,
-                email: user.email,
-                name: user.name || '',
-                role: 'owner'
-            });
-            this.currentFarm = await FirebaseFarm.getFarm(farmId);
+            // No farm found - don't auto-create
+            this.currentFarm = null;
         } catch (e) {
-            console.error('Error ensuring farm:', e);
+            console.error('Error checking farm:', e);
         }
     },
 
@@ -568,6 +587,59 @@ const FarmProfile = {
             alert('Invite sent to ' + email);
         } catch (e) {
             alert('Failed to send invite: ' + e.message);
+        }
+    },
+
+    async createNewFarm() {
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) return;
+
+        const userName = user.name || user.email.split('@')[0];
+        const farmName = prompt('Enter a name for your farm:', userName + "'s Farm");
+        if (!farmName) return;
+
+        try {
+            const farmId = await FirebaseFarm.createFarm(farmName, user.uid);
+            await FirebaseFarm.addMember(farmId, {
+                userId: user.uid,
+                email: user.email,
+                name: user.name || '',
+                role: 'owner'
+            });
+            this.currentFarm = await FirebaseFarm.getFarm(farmId);
+            await this.load();
+        } catch (e) {
+            console.error('Error creating farm:', e);
+            alert('Failed to create farm: ' + e.message);
+        }
+    },
+
+    async confirmDeleteFarm() {
+        if (!this.currentFarm) return;
+
+        const farmName = this.currentFarm.name || 'this farm';
+        const confirmed = confirm(
+            `Are you sure you want to delete "${farmName}"?\n\n` +
+            `This will permanently remove all fields, equipment, storages, and member associations.\n\n` +
+            `Spreading logs are kept with individual users and will not be deleted.`
+        );
+        if (!confirmed) return;
+
+        // Double confirm with farm name
+        const typedName = prompt(`Type the farm name "${farmName}" to confirm deletion:`);
+        if (typedName !== farmName) {
+            alert('Farm name did not match. Deletion cancelled.');
+            return;
+        }
+
+        try {
+            await FirebaseFarm.deleteFarm(this.currentFarm.id);
+            this.currentFarm = null;
+            alert('Farm deleted successfully.');
+            await this.load();
+        } catch (e) {
+            console.error('Error deleting farm:', e);
+            alert('Failed to delete farm: ' + e.message);
         }
     },
 
