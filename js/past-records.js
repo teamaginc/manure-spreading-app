@@ -392,10 +392,13 @@ const PastRecords = {
         try {
             let farmId = this.adminFarmId;
             let userId = this.adminUserId;
+            const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
 
             if (!farmId) {
-                const user = window.FirebaseAuth && FirebaseAuth.getCurrentUser();
-                if (!user || !window.FirebaseFarm) return;
+                if (!user || !window.FirebaseFarm) {
+                    console.warn('PastRecords: No user or FirebaseFarm');
+                    return;
+                }
 
                 // Wait for FirebaseAdmin
                 let attempts = 0;
@@ -406,7 +409,13 @@ const PastRecords = {
 
                 // Get all farms user has access to
                 if (window.FirebaseAdmin) {
-                    this.userFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
+                    try {
+                        this.userFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
+                        console.log('PastRecords: Found farms for user:', this.userFarms.length, this.userFarms.map(f => f.name));
+                    } catch (e) {
+                        console.error('PastRecords: getFarmsForUser failed:', e);
+                        this.userFarms = [];
+                    }
                 }
 
                 // Use saved farm preference, or first available farm
@@ -416,11 +425,23 @@ const PastRecords = {
                 } else if (this.userFarms.length > 0) {
                     farmId = this.userFarms[0].id;
                 } else {
-                    // Fallback to user's own farm
+                    // Fallback to user's own farm via farmId field
                     const farm = await FirebaseFarm.getFarmByUser(user.uid);
-                    if (!farm) return;
-                    farmId = farm.id;
+                    if (farm) {
+                        farmId = farm.id;
+                        this.userFarms = [{ ...farm, memberRole: 'owner' }];
+                    }
                 }
+            }
+
+            // Always update the farm dropdown even if no farm found
+            this.updateFarmIndicator();
+
+            if (!farmId) {
+                console.warn('PastRecords: No farm found for user');
+                // Load just the current user's own logs as fallback
+                this.allLogs = await (window.FirebaseDB || StorageDB).getAllLogs();
+                return;
             }
 
             this.currentFarmId = farmId;
@@ -438,10 +459,13 @@ const PastRecords = {
             const farm = await FirebaseFarm.getFarm(farmId);
             this.currentFarmName = farm?.name || 'Unknown Farm';
 
+            // Update dropdown again now that we have the farm name
+            this.updateFarmIndicator();
+
             // Load logs from ALL farm members (or specific user if admin-scoped)
             if (userId && window.FirebaseAdmin) {
                 this.allLogs = await FirebaseAdmin.getUserLogs(userId);
-            } else {
+            } else if (window.FirebaseAdmin) {
                 // Load logs from all members of the farm
                 const allLogs = [];
                 for (const member of members) {
@@ -454,10 +478,10 @@ const PastRecords = {
                     }
                 }
                 this.allLogs = allLogs;
+            } else {
+                // No admin access, just load own logs
+                this.allLogs = await (window.FirebaseDB || StorageDB).getAllLogs();
             }
-
-            // Update the farm indicator in the header
-            this.updateFarmIndicator();
         } catch (e) {
             console.error('PastRecords loadData error:', e);
         }
