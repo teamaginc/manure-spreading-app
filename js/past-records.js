@@ -439,11 +439,9 @@ const PastRecords = {
                 }
             }
 
-            // Always update the farm dropdown even if no farm found
-            this.updateFarmIndicator();
-
             if (!farmId) {
                 console.warn('PastRecords: No farm found for user');
+                this.updateFarmIndicator();
                 // Load just the current user's own logs as fallback
                 this.allLogs = await (window.FirebaseDB || StorageDB).getAllLogs();
                 return;
@@ -461,11 +459,19 @@ const PastRecords = {
             this.farmMembers = members;
 
             // Get farm name
-            const farm = await FirebaseFarm.getFarm(farmId);
-            this.currentFarmName = farm?.name || 'Unknown Farm';
+            const farmDoc = await FirebaseFarm.getFarm(farmId);
+            this.currentFarmName = farmDoc?.name || 'Unknown Farm';
 
-            // Update dropdown again now that we have the farm name
+            // Ensure the current farm is in userFarms
+            if (this.userFarms.length === 0 && farmDoc) {
+                this.userFarms = [{ ...farmDoc, memberRole: 'owner' }];
+            } else if (!this.userFarms.some(f => f.id === farmId) && farmDoc) {
+                this.userFarms.unshift({ ...farmDoc, memberRole: 'member' });
+            }
+
+            // Now update dropdown with complete data
             this.updateFarmIndicator();
+            console.log('PastRecords: Farm dropdown updated with', this.userFarms.length, 'farms');
 
             // Load logs from ALL farm members (or specific user if admin-scoped)
             if (userId && window.FirebaseAdmin) {
