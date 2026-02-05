@@ -400,42 +400,45 @@ const PastRecords = {
                     return;
                 }
 
-                // Wait for Firebase modules to load (ES module timing)
+                // Wait for FirebaseFarm to load (ES module timing)
                 let attempts = 0;
-                while ((!window.FirebaseFarm || !window.FirebaseAdmin) && attempts < 30) {
+                while (!window.FirebaseFarm && attempts < 30) {
                     await new Promise(r => setTimeout(r, 150));
                     attempts++;
                 }
 
-                if (!window.FirebaseFarm || !window.FirebaseAdmin) {
-                    console.warn('PastRecords: Firebase modules not available after waiting');
+                if (!window.FirebaseFarm) {
+                    console.warn('PastRecords: FirebaseFarm not available');
                     return;
                 }
 
-                // Get all farms user has access to
+                // Step 1: Get user's own farm directly (fast, reliable)
+                const ownFarm = await FirebaseFarm.getFarmByUser(user.uid);
+                if (ownFarm) {
+                    this.userFarms = [{ ...ownFarm, memberRole: 'owner' }];
+                    farmId = ownFarm.id;
+                    console.log('PastRecords: Found own farm:', ownFarm.name);
+                }
+
+                // Step 2: Try to get all farms user is a member of (may be slow on mobile)
                 if (window.FirebaseAdmin) {
                     try {
-                        this.userFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
-                        console.log('PastRecords: Found farms for user:', this.userFarms.length, this.userFarms.map(f => f.name));
+                        const allUserFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
+                        if (allUserFarms.length > 0) {
+                            this.userFarms = allUserFarms;
+                            console.log('PastRecords: Found all farms:', allUserFarms.map(f => f.name));
+                        }
                     } catch (e) {
-                        console.error('PastRecords: getFarmsForUser failed:', e);
-                        this.userFarms = [];
+                        console.warn('PastRecords: getFarmsForUser failed, using own farm:', e);
                     }
                 }
 
-                // Use saved farm preference, or first available farm
+                // Step 3: Use saved preference if it matches an available farm
                 const savedFarmId = localStorage.getItem('pastRecordsFarmId');
                 if (savedFarmId && this.userFarms.some(f => f.id === savedFarmId)) {
                     farmId = savedFarmId;
-                } else if (this.userFarms.length > 0) {
+                } else if (!farmId && this.userFarms.length > 0) {
                     farmId = this.userFarms[0].id;
-                } else {
-                    // Fallback to user's own farm via farmId field
-                    const farm = await FirebaseFarm.getFarmByUser(user.uid);
-                    if (farm) {
-                        farmId = farm.id;
-                        this.userFarms = [{ ...farm, memberRole: 'owner' }];
-                    }
                 }
             }
 
