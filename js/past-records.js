@@ -26,6 +26,15 @@ const PastRecords = {
     async init() {
         if (this.isInitialized && this.map) {
             this.map.invalidateSize();
+            // If farm dropdown wasn't populated on first load, retry
+            const selector = document.getElementById('past-records-farm-select');
+            const hasOnlyDefault = selector && selector.options.length <= 1 && selector.options[0]?.value === '';
+            if (hasOnlyDefault) {
+                await this.loadData();
+                this.renderFields();
+                this.populateFilters();
+                this.renderTable();
+            }
             return;
         }
 
@@ -452,6 +461,25 @@ const PastRecords = {
 
             this.currentFarmId = farmId;
 
+            // Get farm name and populate dropdown EARLY, before expensive loads
+            // This ensures the dropdown shows farms even if later loads fail
+            try {
+                const farmDoc = await FirebaseFarm.getFarm(farmId);
+                this.currentFarmName = farmDoc?.name || 'Unknown Farm';
+
+                if (this.userFarms.length === 0 && farmDoc) {
+                    this.userFarms = [{ ...farmDoc, memberRole: 'owner' }];
+                } else if (!this.userFarms.some(f => f.id === farmId) && farmDoc) {
+                    this.userFarms.unshift({ ...farmDoc, memberRole: 'member' });
+                }
+            } catch (e) {
+                console.warn('PastRecords: Error loading farm doc:', e);
+            }
+
+            // Update dropdown NOW — don't wait for fields/members/logs
+            this.updateFarmIndicator();
+            console.log('PastRecords: Farm dropdown updated with', this.userFarms.length, 'farms');
+
             // Load fields and members
             const [fields, members] = await Promise.all([
                 FirebaseFarm.getFarmFields(farmId),
@@ -460,21 +488,6 @@ const PastRecords = {
 
             this.allFields = fields;
             this.farmMembers = members;
-
-            // Get farm name
-            const farmDoc = await FirebaseFarm.getFarm(farmId);
-            this.currentFarmName = farmDoc?.name || 'Unknown Farm';
-
-            // Ensure the current farm is in userFarms
-            if (this.userFarms.length === 0 && farmDoc) {
-                this.userFarms = [{ ...farmDoc, memberRole: 'owner' }];
-            } else if (!this.userFarms.some(f => f.id === farmId) && farmDoc) {
-                this.userFarms.unshift({ ...farmDoc, memberRole: 'member' });
-            }
-
-            // Now update dropdown with complete data
-            this.updateFarmIndicator();
-            console.log('PastRecords: Farm dropdown updated with', this.userFarms.length, 'farms');
 
             // Load logs from ALL farm members (or specific user if admin-scoped)
             if (userId && window.FirebaseAdmin) {
@@ -498,6 +511,8 @@ const PastRecords = {
             }
         } catch (e) {
             console.error('PastRecords loadData error:', e);
+            // Still try to populate dropdown with whatever we have
+            this.updateFarmIndicator();
         }
     },
 

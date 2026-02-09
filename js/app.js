@@ -58,6 +58,30 @@ const App = {
             });
         }
 
+        // Storage geofence back button
+        const sgBackBtn = document.getElementById('storage-geofence-back-btn');
+        if (sgBackBtn) {
+            sgBackBtn.addEventListener('click', () => {
+                StorageGeofenceEditor.navigateBack();
+            });
+        }
+
+        // Storage geofence save button
+        const sgSaveBtn = document.getElementById('storage-geofence-save-btn');
+        if (sgSaveBtn) {
+            sgSaveBtn.addEventListener('click', () => {
+                StorageGeofenceEditor.save();
+            });
+        }
+
+        // Storage geofence clear button
+        const sgClearBtn = document.getElementById('storage-geofence-clear-btn');
+        if (sgClearBtn) {
+            sgClearBtn.addEventListener('click', () => {
+                StorageGeofenceEditor.clearGeofence();
+            });
+        }
+
         // Field save button
         const fieldSaveBtn = document.getElementById('field-save-btn');
         if (fieldSaveBtn) {
@@ -226,6 +250,11 @@ const App = {
                 this.renderPriorSessions();
             } else if (screenId === 'farm-profile-screen') {
                 if (typeof FarmProfile !== 'undefined') FarmProfile.load();
+            } else if (screenId === 'storage-geofence-screen') {
+                // StorageGeofenceEditor.init() is called by the caller before showScreen
+                setTimeout(() => {
+                    if (StorageGeofenceEditor.map) StorageGeofenceEditor.map.invalidateSize();
+                }, 100);
             } else if (screenId === 'field-map-screen') {
                 setTimeout(() => {
                     if (typeof FieldEditor !== 'undefined') FieldEditor.init();
@@ -463,6 +492,23 @@ const App = {
             const fieldId = selectedField?.value || null;
             const fieldName = selectedField?.value ? selectedField.textContent : null;
             SpreadingTracker.setFieldInfo(fieldId, fieldName, this.setupMapFields || []);
+
+            // Load storage geofences if feature is enabled for this farm
+            if (this.setupSelectedFarmId && window.FirebaseFarm) {
+                try {
+                    const features = await FirebaseFarm.getFarmFeatures(this.setupSelectedFarmId);
+                    if (features && features.storageGeofencing) {
+                        const storages = await FirebaseFarm.getStorages(this.setupSelectedFarmId);
+                        const geofenced = storages.filter(s => s.hasGeofence && s.geojson);
+                        if (geofenced.length > 0) {
+                            SpreadingTracker.setStorageGeofences(geofenced);
+                            MapManager.addStorageGeofences(geofenced);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error loading storage geofences:', e);
+                }
+            }
 
             if (!result.success) {
                 alert('Failed to start GPS tracking: ' + result.error);

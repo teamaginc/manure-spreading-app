@@ -347,6 +347,7 @@ const MapManager = {
         this.clearPath();
         this.clearTractor();
         this.clearPriorSwaths();
+        this.clearStorageGeofences();
     },
 
     invalidateSize() {
@@ -377,6 +378,41 @@ const MapManager = {
     getMapZoom() {
         if (!this.map) return null;
         return this.map.getZoom();
+    },
+
+    storageGeofenceLayers: [],
+
+    addStorageGeofences(storages) {
+        this.clearStorageGeofences();
+        if (!this.map || !storages) return;
+
+        storages.forEach(storage => {
+            if (!storage.geojson) return;
+            const layer = L.geoJSON(storage.geojson, {
+                style: {
+                    color: '#FF8C00',
+                    weight: 3,
+                    fillColor: '#FF8C00',
+                    fillOpacity: 0.1,
+                    dashArray: '10, 6'
+                },
+                onEachFeature: (feature, lyr) => {
+                    lyr.bindTooltip(storage.name || 'Storage', {
+                        permanent: true,
+                        direction: 'center',
+                        className: 'storage-geofence-label'
+                    });
+                }
+            }).addTo(this.map);
+            this.storageGeofenceLayers.push(layer);
+        });
+    },
+
+    clearStorageGeofences() {
+        this.storageGeofenceLayers.forEach(layer => {
+            if (this.map) this.map.removeLayer(layer);
+        });
+        this.storageGeofenceLayers = [];
     },
 
     fieldBoundaryLayers: [],

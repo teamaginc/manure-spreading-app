@@ -269,6 +269,58 @@ const FirebaseDB = {
 
         await deleteDoc(doc(db, "users", user.uid, "logs", id));
         console.log('Log deleted:', id);
+    },
+
+    async getLogsByFarmId(userId, farmId) {
+        try {
+            const logsRef = collection(db, "users", userId, "logs");
+            const q = query(logsRef, where("farmId", "==", farmId));
+            const snapshot = await getDocs(q);
+            const logs = [];
+            snapshot.forEach((d) => {
+                logs.push({ id: d.id, ...d.data() });
+            });
+            return logs;
+        } catch (error) {
+            console.error('Error getting logs by farmId:', error);
+            return [];
+        }
+    },
+
+    async clearFarmIdFromLogs(userId, farmId) {
+        try {
+            const logs = await this.getLogsByFarmId(userId, farmId);
+            for (const log of logs) {
+                await setDoc(doc(db, "users", userId, "logs", log.id), {
+                    farmId: '',
+                    farmName: '',
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            }
+            console.log(`Cleared farmId from ${logs.length} logs for user ${userId}`);
+            return logs.length;
+        } catch (error) {
+            console.error('Error clearing farmId from logs:', error);
+            throw error;
+        }
+    },
+
+    async transferLogsFarmId(userId, oldFarmId, newFarmId, newFarmName) {
+        try {
+            const logs = await this.getLogsByFarmId(userId, oldFarmId);
+            for (const log of logs) {
+                await setDoc(doc(db, "users", userId, "logs", log.id), {
+                    farmId: newFarmId,
+                    farmName: newFarmName,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            }
+            console.log(`Transferred ${logs.length} logs from farm ${oldFarmId} to ${newFarmId}`);
+            return logs.length;
+        } catch (error) {
+            console.error('Error transferring logs farmId:', error);
+            throw error;
+        }
     }
 };
 
@@ -981,6 +1033,20 @@ const FirebaseFarm = {
 
     async deleteFarm(farmId) {
         try {
+            // Get all members before deleting the members subcollection
+            const membersSnapshot = await getDocs(collection(db, "farms", farmId, "members"));
+            const memberIds = [];
+            membersSnapshot.forEach(d => memberIds.push(d.data().userId));
+
+            // Clear farmId from all members' spreading logs
+            for (const memberId of memberIds) {
+                try {
+                    await FirebaseDB.clearFarmIdFromLogs(memberId, farmId);
+                } catch (e) {
+                    console.error(`Error clearing logs for member ${memberId}:`, e);
+                }
+            }
+
             // Delete all subcollections: fields, equipment, storages, members
             const subcollections = ['fields', 'equipment', 'storages', 'members'];
             for (const sub of subcollections) {
@@ -1143,7 +1209,14 @@ const FirebaseFarm = {
         try {
             const snapshot = await getDocs(collection(db, "farms", farmId, "storages"));
             const items = [];
-            snapshot.forEach(d => items.push(d.data()));
+            snapshot.forEach(d => {
+                const data = d.data();
+                // Parse geojsonStr for geofences (same pattern as getFarmFields)
+                if (data.geojsonStr && !data.geojson) {
+                    try { data.geojson = JSON.parse(data.geojsonStr); } catch (e) {}
+                }
+                items.push(data);
+            });
             return items;
         } catch (e) {
             console.error('getStorages error:', e);
@@ -1161,6 +1234,24 @@ const FirebaseFarm = {
             ...data,
             updatedAt: new Date().toISOString()
         }, { merge: true });
+    },
+
+    // Farm Features (per-farm feature toggles)
+    async updateFarmFeatures(farmId, features) {
+        await setDoc(doc(db, "farms", farmId), { features }, { merge: true });
+    },
+
+    async getFarmFeatures(farmId) {
+        try {
+            const snap = await getDoc(doc(db, "farms", farmId));
+            if (snap.exists()) {
+                return snap.data().features || {};
+            }
+            return {};
+        } catch (e) {
+            console.error('getFarmFeatures error:', e);
+            return {};
+        }
     },
 
     // Invites

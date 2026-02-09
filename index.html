@@ -984,6 +984,16 @@
                 </div>
             </div>
 
+            <!-- Farm Features -->
+            <div class="toggle-section">
+                <label class="toggle-label">
+                    <span>Storage Geofencing</span>
+                    <input type="checkbox" id="farm-detail-geofencing-toggle">
+                    <span class="toggle-switch"></span>
+                </label>
+                <p class="toggle-description">Allow farmers to draw geofences around storages for automatic load counting during spreading.</p>
+            </div>
+
             <!-- Farm Members Section -->
             <div class="admin-farm-section">
                 <h3 class="farm-section-title">Farm Members</h3>
@@ -1188,6 +1198,28 @@
                     </form>
                 </div>
             </div>
+
+            <!-- Farm Delete Records Modal -->
+            <div id="farm-delete-records-modal" class="modal-overlay hidden">
+                <div class="modal-content">
+                    <h3>Handle Spreading Records</h3>
+                    <p id="farm-delete-records-count" style="margin-bottom:16px;">You have 0 spreading records associated with this farm.</p>
+                    <div id="farm-delete-transfer-option" class="hidden">
+                        <div class="form-group">
+                            <label for="farm-delete-transfer-target">Transfer records to:</label>
+                            <select id="farm-delete-transfer-target">
+                                <option value="">Select a farm...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p style="font-size:0.85rem;color:#666;margin-bottom:16px;">Note: Other members' records will have farmId cleared (records are not deleted — they belong to other users).</p>
+                    <div style="display:flex;gap:12px;margin-top:16px;">
+                        <button class="btn btn-danger" id="farm-delete-records-delete">Delete My Records</button>
+                        <button class="btn btn-primary hidden" id="farm-delete-records-transfer">Transfer Records</button>
+                        <button class="btn btn-secondary" id="farm-delete-records-cancel">Cancel</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1260,6 +1292,22 @@
         </div>
     </div>
 
+    <!-- Storage Geofence Screen -->
+    <div id="storage-geofence-screen" class="screen">
+        <div class="screen-header" style="z-index:1001;">
+            <button class="btn-back" id="storage-geofence-back-btn">Cancel</button>
+            <h2 id="storage-geofence-title">Storage Geofence</h2>
+            <button class="btn btn-primary" id="storage-geofence-save-btn" style="padding:8px 16px;font-size:0.9rem;">Save</button>
+        </div>
+        <div class="storage-geofence-instructions">
+            Draw a polygon around the storage area. During spreading, entering this area will auto-count a new load.
+        </div>
+        <div id="storage-geofence-map" style="flex:1;width:100%;z-index:1;"></div>
+        <div style="position:absolute;bottom:16px;left:16px;z-index:1000;">
+            <button class="btn btn-danger hidden" id="storage-geofence-clear-btn" style="padding:8px 16px;font-size:0.9rem;">Remove Geofence</button>
+        </div>
+    </div>
+
     <!-- Field Map Screen -->
     <div id="field-map-screen" class="screen">
         <div class="screen-header" style="z-index:1001;">
@@ -1299,6 +1347,7 @@
     <script src="js/admin.js"></script>
     <script src="js/farm-profile.js"></script>
     <script src="js/field-editor.js"></script>
+    <script src="js/storage-geofence-editor.js"></script>
     <script src="js/past-records.js"></script>
     <script src="js/record-editor.js"></script>
     <script type="module" src="js/firebase-config.js"></script>

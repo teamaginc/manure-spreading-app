@@ -1098,6 +1098,13 @@ const AdminPanel = {
             document.getElementById('farm-detail-name').textContent = farm.name || 'Unnamed Farm';
             document.getElementById('farm-detail-created').textContent = farm.createdAt ? new Date(farm.createdAt).toLocaleDateString() : '-';
 
+            // Load farm features (geofencing toggle)
+            const features = await FirebaseFarm.getFarmFeatures(farmId);
+            const geofencingToggle = document.getElementById('farm-detail-geofencing-toggle');
+            if (geofencingToggle) {
+                geofencingToggle.checked = !!(features && features.storageGeofencing);
+            }
+
             // Load all farm data in parallel
             await Promise.all([
                 this.loadFarmDetailMembers(farmId),
@@ -1219,6 +1226,17 @@ const AdminPanel = {
     },
 
     setupFarmDetail() {
+        // Storage Geofencing toggle
+        const geofencingToggle = document.getElementById('farm-detail-geofencing-toggle');
+        if (geofencingToggle) {
+            geofencingToggle.addEventListener('change', async () => {
+                if (!this.currentFarmId) return;
+                await FirebaseFarm.updateFarmFeatures(this.currentFarmId, {
+                    storageGeofencing: geofencingToggle.checked
+                });
+            });
+        }
+
         // View Fields on Map button
         const viewMapBtn = document.getElementById('farm-detail-view-map-btn');
         if (viewMapBtn) {

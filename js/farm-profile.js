@@ -6,6 +6,7 @@ const FarmProfile = {
     equipment: [],
     storages: [],
     members: [],
+    geofencingEnabled: false,
 
     async init() {
         this.setupListeners();
@@ -129,15 +130,23 @@ const FarmProfile = {
         if (noFarmSection) noFarmSection.classList.add('hidden');
         if (farmContent) farmContent.classList.remove('hidden');
 
-        // Only show danger zone to farm owner
+        // Only show danger zone to farm owner (check both member role and createdBy)
         const members = await FirebaseFarm.getMembers(this.currentFarm.id);
         const currentMember = members.find(m => m.userId === user.uid);
-        const isOwner = currentMember?.role === 'owner';
+        const isOwner = currentMember?.role === 'owner' || user.uid === this.currentFarm.createdBy;
         if (dangerZone) dangerZone.classList.toggle('hidden', !isOwner);
 
         // Load farm name
         const nameInput = document.getElementById('farm-name-input');
         if (nameInput) nameInput.value = this.currentFarm.name || '';
+
+        // Check farm features for geofencing
+        try {
+            const features = await FirebaseFarm.getFarmFeatures(this.currentFarm.id);
+            this.geofencingEnabled = !!(features && features.storageGeofencing);
+        } catch (e) {
+            this.geofencingEnabled = false;
+        }
 
         await Promise.all([
             this.loadFields(),
@@ -440,18 +449,23 @@ const FarmProfile = {
             return;
         }
 
-        container.innerHTML = this.storages.map(s => `
+        container.innerHTML = this.storages.map(s => {
+            const geofenceBtn = this.geofencingEnabled
+                ? `<button class="btn-geofence-storage ${s.hasGeofence ? 'btn-edit-geofence' : 'btn-draw-geofence'}" data-storage-id="${s.id}">${s.hasGeofence ? 'Edit Geofence' : 'Set Geofence'}</button>`
+                : '';
+            return `
             <div class="field-item" data-storage-id="${s.id}">
                 <div>
                     <div class="field-name">${s.name}</div>
                     <div class="field-meta">${s.source || ''} • ${s.capacity} ${s.units}</div>
                 </div>
                 <div style="display:flex;gap:6px;">
+                    ${geofenceBtn}
                     <button class="btn-edit-storage" data-storage-id="${s.id}" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.8rem;cursor:pointer;">Edit</button>
                     <button class="btn-delete-field" data-storage-id="${s.id}">Delete</button>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
 
         container.querySelectorAll('.btn-edit-storage').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -471,6 +485,22 @@ const FarmProfile = {
                 } catch (err) {
                     alert('Failed to delete: ' + err.message);
                 }
+            });
+        });
+
+        // Geofence buttons
+        container.querySelectorAll('.btn-geofence-storage').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const storage = this.storages.find(x => x.id === btn.dataset.storageId);
+                if (!storage) return;
+                StorageGeofenceEditor.init(
+                    this.currentFarm.id,
+                    storage.id,
+                    storage.name,
+                    storage.geojson || null
+                );
+                App.showScreen('storage-geofence-screen');
             });
         });
     },
@@ -620,27 +650,127 @@ const FarmProfile = {
         const farmName = this.currentFarm.name || 'this farm';
         const confirmed = confirm(
             `Are you sure you want to delete "${farmName}"?\n\n` +
-            `This will permanently remove all fields, equipment, storages, and member associations.\n\n` +
-            `Spreading logs are kept with individual users and will not be deleted.`
+            `This will permanently remove all fields, equipment, storages, and member associations.`
         );
         if (!confirmed) return;
 
-        // Double confirm with farm name
-        const typedName = prompt(`Type the farm name "${farmName}" to confirm deletion:`);
-        if (typedName !== farmName) {
-            alert('Farm name did not match. Deletion cancelled.');
-            return;
+        const user = FirebaseAuth.getCurrentUser();
+        if (!user) return;
+
+        // Get user's logs for this farm
+        const userLogs = await FirebaseDB.getLogsByFarmId(user.uid, this.currentFarm.id);
+        const logCount = userLogs.length;
+
+        // Get user's other farms for transfer option
+        const userFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
+        const otherFarms = userFarms.filter(f => f.id !== this.currentFarm.id);
+
+        // Show records handling modal
+        const modal = document.getElementById('farm-delete-records-modal');
+        const countEl = document.getElementById('farm-delete-records-count');
+        const transferOption = document.getElementById('farm-delete-transfer-option');
+        const transferSelect = document.getElementById('farm-delete-transfer-target');
+        const deleteBtn = document.getElementById('farm-delete-records-delete');
+        const transferBtn = document.getElementById('farm-delete-records-transfer');
+        const cancelBtn = document.getElementById('farm-delete-records-cancel');
+
+        countEl.textContent = `You have ${logCount} spreading record${logCount !== 1 ? 's' : ''} associated with this farm.`;
+
+        // Show transfer option if user has other farms
+        if (otherFarms.length > 0) {
+            transferOption.classList.remove('hidden');
+            transferBtn.classList.remove('hidden');
+            transferSelect.innerHTML = '<option value="">Select a farm...</option>' +
+                otherFarms.map(f => `<option value="${f.id}" data-name="${f.name}">${f.name}</option>`).join('');
+        } else {
+            transferOption.classList.add('hidden');
+            transferBtn.classList.add('hidden');
         }
 
-        try {
-            await FirebaseFarm.deleteFarm(this.currentFarm.id);
-            this.currentFarm = null;
-            alert('Farm deleted successfully.');
-            await this.load();
-        } catch (e) {
-            console.error('Error deleting farm:', e);
-            alert('Failed to delete farm: ' + e.message);
-        }
+        // Update delete button text based on log count
+        deleteBtn.textContent = logCount > 0 ? 'Clear Farm from My Records' : 'Continue with Deletion';
+
+        modal.classList.remove('hidden');
+
+        // Store farm reference for handlers
+        const farmToDelete = this.currentFarm;
+
+        // Create promise to handle user choice
+        return new Promise((resolve) => {
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                deleteBtn.removeEventListener('click', handleDelete);
+                transferBtn.removeEventListener('click', handleTransfer);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            const proceedWithDeletion = async () => {
+                // Type-to-confirm
+                const typedName = prompt(`Type the farm name "${farmName}" to confirm deletion:`);
+                if (typedName !== farmName) {
+                    alert('Farm name did not match. Deletion cancelled.');
+                    return;
+                }
+
+                try {
+                    await FirebaseFarm.deleteFarm(farmToDelete.id);
+                    this.currentFarm = null;
+                    alert('Farm deleted successfully.');
+                    await this.load();
+                } catch (e) {
+                    console.error('Error deleting farm:', e);
+                    alert('Failed to delete farm: ' + e.message);
+                }
+            };
+
+            const handleDelete = async () => {
+                cleanup();
+                // Clear farmId from user's logs (deleteFarm will handle other members)
+                if (logCount > 0) {
+                    try {
+                        await FirebaseDB.clearFarmIdFromLogs(user.uid, farmToDelete.id);
+                    } catch (e) {
+                        console.error('Error clearing logs:', e);
+                    }
+                }
+                await proceedWithDeletion();
+                resolve();
+            };
+
+            const handleTransfer = async () => {
+                const targetFarmId = transferSelect.value;
+                const targetOption = transferSelect.selectedOptions[0];
+                const targetFarmName = targetOption?.dataset?.name || '';
+
+                if (!targetFarmId) {
+                    alert('Please select a farm to transfer records to.');
+                    return;
+                }
+
+                cleanup();
+                // Transfer logs to new farm
+                if (logCount > 0) {
+                    try {
+                        await FirebaseDB.transferLogsFarmId(user.uid, farmToDelete.id, targetFarmId, targetFarmName);
+                    } catch (e) {
+                        console.error('Error transferring logs:', e);
+                        alert('Failed to transfer records: ' + e.message);
+                        return;
+                    }
+                }
+                await proceedWithDeletion();
+                resolve();
+            };
+
+            const handleCancel = () => {
+                cleanup();
+                resolve();
+            };
+
+            deleteBtn.addEventListener('click', handleDelete);
+            transferBtn.addEventListener('click', handleTransfer);
+            cancelBtn.addEventListener('click', handleCancel);
+        });
     },
 
     // Check and prompt for pending invites on login

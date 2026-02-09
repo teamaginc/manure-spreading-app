@@ -1,6 +1,6 @@
 // Service Worker for offline caching - Network-first strategy
 
-const CACHE_NAME = 'teamag-manure-v31';
+const CACHE_NAME = 'teamag-manure-v32';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
@@ -12,6 +12,7 @@ const ASSETS_TO_CACHE = [
     '/js/storage.js',
     '/js/export.js',
     '/js/admin.js',
+    '/js/storage-geofence-editor.js',
     '/js/tracking.js',
     '/manifest.json',
     '/assets/tractor-icon.svg',

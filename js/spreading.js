@@ -26,6 +26,13 @@ const SpreadingTracker = {
     availableFields: [],
     fieldChangePromptShowing: false,
     pendingFieldChange: null,
+    // Storage geofence tracking
+    storageGeofences: [],
+    insideStorageId: null,
+    autoLoads: [],
+    geofenceEnabled: false,
+    geofenceCooldownMs: 30000, // 30 second cooldown to prevent GPS jitter double-counting
+    lastGeofenceEntryTime: 0,
 
     async startTracking(tractorColor, manureColor, targetRate, spreadWidth, priorSessionId = null) {
         if (this.isTracking) {
@@ -144,12 +151,20 @@ const SpreadingTracker = {
         // Update tractor position on map
         MapManager.setTractorPosition(latitude, longitude, this.tractorColor);
 
+        // On first valid position, check if we're already inside a storage geofence
+        if (!this.lastPosition && this.geofenceEnabled) {
+            this.checkInitialGeofencePosition(latitude, longitude);
+        }
+
         // Check if we should add this point (avoid too many points when stationary)
         const shouldAddPoint = this.shouldAddPoint(latitude, longitude);
 
         if (shouldAddPoint) {
             // Check for field crossing before adding point
             this.checkFieldCrossing(latitude, longitude);
+
+            // Check for storage geofence entry (auto-load counting)
+            this.checkStorageGeofence(latitude, longitude);
 
             // Accumulate distance
             if (this.lastPosition) {
@@ -312,6 +327,11 @@ const SpreadingTracker = {
         this.currentLog.acresCovered = acresCovered;
         this.currentLog.calculatedRate = this.getCalculatedRate();
 
+        // Include auto-load data if geofencing was active
+        if (this.autoLoads.length > 0) {
+            this.currentLog.autoLoads = this.autoLoads;
+        }
+
         // Save to database (use Firebase if available, fallback to local)
         try {
             const dbHandler = window.FirebaseDB || StorageDB;
@@ -336,6 +356,13 @@ const SpreadingTracker = {
             this.availableFields = [];
             this.fieldChangePromptShowing = false;
             this.pendingFieldChange = null;
+
+            // Reset geofence tracking
+            this.storageGeofences = [];
+            this.insideStorageId = null;
+            this.autoLoads = [];
+            this.geofenceEnabled = false;
+            this.lastGeofenceEntryTime = 0;
 
             return log;
         } catch (error) {
@@ -541,5 +568,141 @@ const SpreadingTracker = {
         this.fieldChangePromptShowing = false;
         this.pendingFieldChange = null;
         // Continue with current field - no changes needed
+    },
+
+    // --- Storage Geofence Auto-Load Detection ---
+
+    setStorageGeofences(storages) {
+        this.storageGeofences = storages.filter(s => s.hasGeofence && s.geojson);
+        this.geofenceEnabled = this.storageGeofences.length > 0;
+        this.insideStorageId = null;
+        this.autoLoads = [];
+        this.lastGeofenceEntryTime = 0;
+    },
+
+    checkInitialGeofencePosition(lat, lng) {
+        // Called once at tracking start to set insideStorageId
+        // Prevents false trigger if starting inside a geofence
+        if (!this.geofenceEnabled) return;
+        for (const storage of this.storageGeofences) {
+            const polygon = this.getStoragePolygonCoords(storage);
+            if (polygon.length > 0 && this.pointInPolygon([lat, lng], polygon)) {
+                this.insideStorageId = storage.id;
+                return;
+            }
+        }
+    },
+
+    getStoragePolygonCoords(storage) {
+        const coords = [];
+        if (!storage.geojson) return coords;
+        const features = storage.geojson.features || [storage.geojson];
+        features.forEach(feature => {
+            const geom = feature.geometry || feature;
+            if (geom.type === 'Polygon') {
+                geom.coordinates[0].forEach(c => coords.push([c[1], c[0]]));
+            } else if (geom.type === 'MultiPolygon') {
+                geom.coordinates.forEach(poly => {
+                    poly[0].forEach(c => coords.push([c[1], c[0]]));
+                });
+            }
+        });
+        return coords;
+    },
+
+    checkStorageGeofence(lat, lng) {
+        if (!this.geofenceEnabled) return;
+
+        for (const storage of this.storageGeofences) {
+            const polygon = this.getStoragePolygonCoords(storage);
+            if (polygon.length === 0) continue;
+
+            const isInside = this.pointInPolygon([lat, lng], polygon);
+
+            if (isInside && this.insideStorageId !== storage.id) {
+                // Entered a storage geofence - check cooldown
+                const now = Date.now();
+                if (now - this.lastGeofenceEntryTime < this.geofenceCooldownMs) {
+                    return; // Still in cooldown
+                }
+                this.insideStorageId = storage.id;
+                this.lastGeofenceEntryTime = now;
+                this.onStorageGeofenceEntry(storage);
+                return;
+            }
+        }
+
+        // Check if we left all geofences
+        let stillInside = false;
+        for (const storage of this.storageGeofences) {
+            if (storage.id === this.insideStorageId) {
+                const polygon = this.getStoragePolygonCoords(storage);
+                if (polygon.length > 0 && this.pointInPolygon([lat, lng], polygon)) {
+                    stillInside = true;
+                }
+                break;
+            }
+        }
+        if (!stillInside) {
+            this.insideStorageId = null;
+        }
+    },
+
+    onStorageGeofenceEntry(storage) {
+        // Increment load count
+        this.loadCount++;
+
+        // Record auto-load event
+        const loadEvent = {
+            storageId: storage.id,
+            storageName: storage.name,
+            storageSource: storage.source || '',
+            timestamp: new Date().toISOString(),
+            loadNumber: this.loadCount,
+            volumePerLoad: this.equipmentCapacity || null,
+            volumeUnits: storage.units || 'Gallons'
+        };
+        this.autoLoads.push(loadEvent);
+
+        // Update current log
+        if (this.currentLog) {
+            this.currentLog.loadCount = this.loadCount;
+        }
+
+        // Update load counter display
+        const loadCounterEl = document.getElementById('load-counter');
+        if (loadCounterEl) {
+            loadCounterEl.textContent = `Load: ${this.loadCount}`;
+            loadCounterEl.classList.add('load-counter-bump');
+            setTimeout(() => loadCounterEl.classList.remove('load-counter-bump'), 400);
+        }
+
+        // Update App.loadCount to stay in sync
+        if (typeof App !== 'undefined') {
+            App.loadCount = this.loadCount;
+        }
+
+        // Update calculated rate display
+        this.updateCalcRateDisplay();
+
+        // Show toast notification
+        this.showAutoLoadToast(storage.name, this.loadCount);
+    },
+
+    showAutoLoadToast(storageName, loadNumber) {
+        // Remove any existing toast
+        const existing = document.getElementById('auto-load-toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'auto-load-toast';
+        toast.className = 'auto-load-toast';
+        toast.textContent = `Load ${loadNumber} detected \u2014 ${storageName}`;
+        document.body.appendChild(toast);
+
+        // Auto-remove after 4 seconds
+        setTimeout(() => {
+            if (toast.parentNode) toast.remove();
+        }, 4000);
     }
 };

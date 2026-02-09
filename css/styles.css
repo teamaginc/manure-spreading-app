@@ -2316,3 +2316,88 @@ body:has(.announcement-banner:not(.hidden)) .app-sidebar {
         box-shadow: 0 1px 6px rgba(0,0,0,0.2);
     }
 }
+
+/* --- Storage Geofence Styles --- */
+
+/* Auto-load toast notification */
+.auto-load-toast {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2d7a2d;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: toast-slide-in 0.3s ease-out;
+    white-space: nowrap;
+}
+
+@keyframes toast-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+/* Load counter bump animation */
+.load-counter-bump {
+    animation: counter-bump 0.4s ease-out;
+}
+
+@keyframes counter-bump {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+
+/* Storage geofence label on map */
+.storage-geofence-label {
+    background: rgba(255, 140, 0, 0.85);
+    border: 1px solid #FF8C00;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+/* Geofence buttons in storage list */
+.btn-draw-geofence,
+.btn-edit-geofence {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.btn-draw-geofence {
+    background: #FF8C00;
+    color: #fff;
+}
+
+.btn-edit-geofence {
+    background: #e07800;
+    color: #fff;
+}
+
+/* Storage geofence screen instructions bar */
+.storage-geofence-instructions {
+    background: rgba(255, 140, 0, 0.15);
+    color: #FF8C00;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 140, 0, 0.3);
+}
