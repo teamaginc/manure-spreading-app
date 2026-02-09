@@ -26,22 +26,19 @@ const PastRecords = {
     async init() {
         if (this.isInitialized && this.map) {
             this.map.invalidateSize();
-            // If farm dropdown wasn't populated on first load, retry
-            const selector = document.getElementById('past-records-farm-select');
-            const hasOnlyDefault = selector && selector.options.length <= 1 && selector.options[0]?.value === '';
-            if (hasOnlyDefault) {
-                await this.loadData();
-                this.renderFields();
-                this.populateFilters();
-                this.renderTable();
-            }
+            // Always reload data on re-init to ensure fresh data
+            await this.loadData();
+            this.renderFields();
+            this.populateFilters();
+            this.renderTable();
             return;
         }
 
+        // Create map with default center (will be updated when fields load)
         this.map = L.map('past-records-map', {
             zoomControl: true,
             attributionControl: true
-        }).setView([43.0, -89.4], 15);
+        }).setView([43.0, -89.4], 10);
 
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
@@ -52,10 +49,24 @@ const PastRecords = {
         this.setupFilterListeners();
         this.setupResizeHandle();
 
+        // Load data and render
         await this.loadData();
         this.renderFields();
         this.populateFilters();
         this.renderTable();
+
+        // If no fields loaded, try to center on user's location
+        if (this.allFields.length === 0 && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    this.map.setView([position.coords.latitude, position.coords.longitude], 14);
+                },
+                (error) => {
+                    console.warn('PastRecords: Could not get user location:', error.message);
+                },
+                { timeout: 5000 }
+            );
+        }
     },
 
     setupResizeHandle() {
@@ -409,78 +420,69 @@ const PastRecords = {
                     return;
                 }
 
-                // Wait for FirebaseFarm to load (ES module timing)
+                // Wait for Firebase modules to load (same pattern as setup screen)
                 let attempts = 0;
-                while (!window.FirebaseFarm && attempts < 30) {
-                    await new Promise(r => setTimeout(r, 150));
+                while ((!window.FirebaseFarm || !window.FirebaseAdmin) && attempts < 30) {
+                    await new Promise(r => setTimeout(r, 100));
                     attempts++;
                 }
 
-                if (!window.FirebaseFarm) {
-                    console.warn('PastRecords: FirebaseFarm not available');
+                if (!window.FirebaseFarm || !window.FirebaseAdmin) {
+                    console.warn('PastRecords: Firebase modules not available');
+                    // Fall back to user's own logs
+                    this.allLogs = await (window.FirebaseDB || StorageDB).getAllLogs();
                     return;
                 }
 
-                // Step 1: Get user's own farm directly (fast, reliable)
-                const ownFarm = await FirebaseFarm.getFarmByUser(user.uid);
-                if (ownFarm) {
-                    this.userFarms = [{ ...ownFarm, memberRole: 'owner' }];
-                    farmId = ownFarm.id;
-                    console.log('PastRecords: Found own farm:', ownFarm.name);
+                // Use the same approach as setup screen - get all farms user is member of
+                console.log('PastRecords: Fetching farms for user:', user.uid);
+                try {
+                    this.userFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
+                    console.log('PastRecords: Found farms:', this.userFarms.map(f => f.name));
+                } catch (e) {
+                    console.error('PastRecords: getFarmsForUser failed:', e);
+                    this.userFarms = [];
                 }
 
-                // Step 2: Try to get all farms user is a member of (may be slow on mobile)
-                if (window.FirebaseAdmin) {
-                    try {
-                        const allUserFarms = await FirebaseAdmin.getFarmsForUser(user.uid);
-                        if (allUserFarms.length > 0) {
-                            this.userFarms = allUserFarms;
-                            console.log('PastRecords: Found all farms:', allUserFarms.map(f => f.name));
-                        }
-                    } catch (e) {
-                        console.warn('PastRecords: getFarmsForUser failed, using own farm:', e);
+                // If no farms from membership query, try user's own farm
+                if (this.userFarms.length === 0) {
+                    const ownFarm = await FirebaseFarm.getFarmByUser(user.uid);
+                    if (ownFarm) {
+                        this.userFarms = [{ ...ownFarm, memberRole: 'owner' }];
+                        console.log('PastRecords: Using own farm:', ownFarm.name);
                     }
                 }
 
-                // Step 3: Use saved preference if it matches an available farm
+                if (this.userFarms.length === 0) {
+                    console.warn('PastRecords: No farms found for user');
+                    this.updateFarmIndicator();
+                    // Load just the current user's own logs
+                    this.allLogs = await FirebaseDB.getAllLogs();
+                    this.populateFilters();
+                    this.renderTable();
+                    return;
+                }
+
+                // Use saved preference or first farm
                 const savedFarmId = localStorage.getItem('pastRecordsFarmId');
                 if (savedFarmId && this.userFarms.some(f => f.id === savedFarmId)) {
                     farmId = savedFarmId;
-                } else if (!farmId && this.userFarms.length > 0) {
+                } else {
                     farmId = this.userFarms[0].id;
                 }
             }
 
-            if (!farmId) {
-                console.warn('PastRecords: No farm found for user');
-                this.updateFarmIndicator();
-                // Load just the current user's own logs as fallback
-                this.allLogs = await (window.FirebaseDB || StorageDB).getAllLogs();
-                return;
-            }
-
             this.currentFarmId = farmId;
 
-            // Get farm name and populate dropdown EARLY, before expensive loads
-            // This ensures the dropdown shows farms even if later loads fail
-            try {
-                const farmDoc = await FirebaseFarm.getFarm(farmId);
-                this.currentFarmName = farmDoc?.name || 'Unknown Farm';
+            // Find the farm name from userFarms
+            const currentFarm = this.userFarms.find(f => f.id === farmId);
+            this.currentFarmName = currentFarm?.name || 'Unknown Farm';
 
-                if (this.userFarms.length === 0 && farmDoc) {
-                    this.userFarms = [{ ...farmDoc, memberRole: 'owner' }];
-                } else if (!this.userFarms.some(f => f.id === farmId) && farmDoc) {
-                    this.userFarms.unshift({ ...farmDoc, memberRole: 'member' });
-                }
-            } catch (e) {
-                console.warn('PastRecords: Error loading farm doc:', e);
-            }
-
-            // Update dropdown NOW — don't wait for fields/members/logs
+            // Update dropdown immediately
             this.updateFarmIndicator();
-            console.log('PastRecords: Farm dropdown updated with', this.userFarms.length, 'farms');
+            console.log('PastRecords: Selected farm:', this.currentFarmName);
 
-            // Load fields and members
+            // Load fields and members in parallel
             const [fields, members] = await Promise.all([
                 FirebaseFarm.getFarmFields(farmId),
                 FirebaseFarm.getMembers(farmId)
@@ -488,30 +490,33 @@ const PastRecords = {
 
             this.allFields = fields;
             this.farmMembers = members;
+            console.log('PastRecords: Loaded', fields.length, 'fields and', members.length, 'members');
 
-            // Load logs from ALL farm members (or specific user if admin-scoped)
+            // Load logs from all farm members
             if (userId && window.FirebaseAdmin) {
+                // Admin viewing specific user
                 this.allLogs = await FirebaseAdmin.getUserLogs(userId);
-            } else if (window.FirebaseAdmin) {
+            } else {
                 // Load logs from all members of the farm
                 const allLogs = [];
                 for (const member of members) {
                     if (!member.userId) continue;
                     try {
                         const memberLogs = await FirebaseAdmin.getUserLogs(member.userId);
-                        allLogs.push(...memberLogs);
+                        // Filter to only logs associated with this farm
+                        const farmLogs = memberLogs.filter(log =>
+                            log.farmId === farmId || !log.farmId
+                        );
+                        allLogs.push(...farmLogs);
                     } catch (e) {
                         console.warn('Could not load logs for member:', member.userId, e);
                     }
                 }
                 this.allLogs = allLogs;
-            } else {
-                // No admin access, just load own logs
-                this.allLogs = await (window.FirebaseDB || StorageDB).getAllLogs();
+                console.log('PastRecords: Loaded', allLogs.length, 'logs');
             }
         } catch (e) {
             console.error('PastRecords loadData error:', e);
-            // Still try to populate dropdown with whatever we have
             this.updateFarmIndicator();
         }
     },
@@ -553,7 +558,12 @@ const PastRecords = {
         this.fieldLayers.forEach(l => this.map.removeLayer(l));
         this.fieldLayers = [];
 
-        if (!this.allFields.length) return;
+        console.log('PastRecords: Rendering', this.allFields.length, 'fields');
+
+        if (!this.allFields.length) {
+            console.log('PastRecords: No fields to render');
+            return;
+        }
 
         let bounds = null;
 
@@ -593,7 +603,10 @@ const PastRecords = {
         });
 
         if (bounds) {
+            console.log('PastRecords: Fitting map to bounds:', bounds.toBBoxString());
             this.map.fitBounds(bounds, { padding: [30, 30] });
+        } else {
+            console.log('PastRecords: No valid bounds from fields');
         }
     },
 
