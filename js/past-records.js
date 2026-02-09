@@ -82,8 +82,8 @@ const PastRecords = {
             if (!isDragging) return;
 
             const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-            const deltaY = startY - clientY; // Negative when dragging down, positive when dragging up
-            const newHeight = startHeight + deltaY;
+            const deltaY = clientY - startY; // Positive when dragging down, negative when dragging up
+            const newHeight = startHeight + deltaY; // Dragging down = bigger panel, dragging up = smaller panel
 
             // Get screen bounds (excluding header)
             const header = screen.querySelector('.screen-header');

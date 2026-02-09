@@ -1126,6 +1126,7 @@ input[type="number"] {
     max-height: 70%;
     height: 40%; /* Default height */
     flex-shrink: 0;
+    overflow: hidden; /* Ensure content is clipped when resizing */
 }
 
 .records-filters {
