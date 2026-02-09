@@ -1509,12 +1509,8 @@ input[type="number"] {
     /* Content area needs left padding to account for sidebar */
     body.has-sidebar #menu-screen .screen-content {
         margin-left: 280px;
-    }
-
-    body.has-sidebar #menu-screen .screen-content {
-        justify-content: flex-start;
+        justify-content: center;
         align-items: center;
-        padding-top: 80px;
         position: relative;
         z-index: 1;
     }
@@ -1524,6 +1520,7 @@ input[type="number"] {
         margin-bottom: 16px;
         color: #fff;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+        text-align: center;
     }
 
     /* Desktop subtitle styling */
