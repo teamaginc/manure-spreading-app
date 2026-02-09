@@ -1509,10 +1509,12 @@ input[type="number"] {
     /* Content area needs left padding to account for sidebar */
     body.has-sidebar #menu-screen .screen-content {
         margin-left: 280px;
-        justify-content: center;
+        justify-content: flex-start;
         align-items: center;
+        padding-top: 80px;
         position: relative;
         z-index: 1;
+        width: calc(100% - 280px);
     }
 
     body.has-sidebar #menu-screen .welcome-text {
@@ -1521,6 +1523,7 @@ input[type="number"] {
         color: #fff;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
         text-align: center;
+        width: 100%;
     }
 
     /* Desktop subtitle styling */
