@@ -1492,7 +1492,6 @@ input[type="number"] {
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        position: relative;
     }
 
     /* Dark overlay for text readability - full viewport */
