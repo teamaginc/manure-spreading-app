@@ -1511,10 +1511,9 @@ input[type="number"] {
         margin-left: 280px;
         justify-content: flex-start;
         align-items: center;
-        padding-top: 80px;
+        padding: 80px 0 24px 0;
         position: relative;
         z-index: 1;
-        width: calc(100% - 280px);
     }
 
     body.has-sidebar #menu-screen .welcome-text {
@@ -1523,7 +1522,6 @@ input[type="number"] {
         color: #fff;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
         text-align: center;
-        width: 100%;
     }
 
     /* Desktop subtitle styling */
