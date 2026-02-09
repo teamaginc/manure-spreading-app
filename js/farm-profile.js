@@ -140,10 +140,17 @@ const FarmProfile = {
         const nameInput = document.getElementById('farm-name-input');
         if (nameInput) nameInput.value = this.currentFarm.name || '';
 
-        // Check farm features for geofencing
+        // Check farm features for geofencing (requires global + per-farm enabled)
         try {
-            const features = await FirebaseFarm.getFarmFeatures(this.currentFarm.id);
-            this.geofencingEnabled = !!(features && features.storageGeofencing);
+            const globalFeatures = await FirebaseAdmin.getGlobalFeatures();
+            const globalEnabled = !!(globalFeatures && globalFeatures.storageGeofencing && globalFeatures.storageGeofencing.enabled);
+
+            if (globalEnabled) {
+                const farmFeatures = await FirebaseFarm.getFarmFeatures(this.currentFarm.id);
+                this.geofencingEnabled = !!(farmFeatures && farmFeatures.storageGeofencing);
+            } else {
+                this.geofencingEnabled = false;
+            }
         } catch (e) {
             this.geofencingEnabled = false;
         }

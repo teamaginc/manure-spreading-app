@@ -493,16 +493,21 @@ const App = {
             const fieldName = selectedField?.value ? selectedField.textContent : null;
             SpreadingTracker.setFieldInfo(fieldId, fieldName, this.setupMapFields || []);
 
-            // Load storage geofences if feature is enabled for this farm
-            if (this.setupSelectedFarmId && window.FirebaseFarm) {
+            // Load storage geofences if feature is enabled globally and for this farm
+            if (this.setupSelectedFarmId && window.FirebaseFarm && window.FirebaseAdmin) {
                 try {
-                    const features = await FirebaseFarm.getFarmFeatures(this.setupSelectedFarmId);
-                    if (features && features.storageGeofencing) {
-                        const storages = await FirebaseFarm.getStorages(this.setupSelectedFarmId);
-                        const geofenced = storages.filter(s => s.hasGeofence && s.geojson);
-                        if (geofenced.length > 0) {
-                            SpreadingTracker.setStorageGeofences(geofenced);
-                            MapManager.addStorageGeofences(geofenced);
+                    const globalFeatures = await FirebaseAdmin.getGlobalFeatures();
+                    const globalEnabled = !!(globalFeatures && globalFeatures.storageGeofencing && globalFeatures.storageGeofencing.enabled);
+
+                    if (globalEnabled) {
+                        const farmFeatures = await FirebaseFarm.getFarmFeatures(this.setupSelectedFarmId);
+                        if (farmFeatures && farmFeatures.storageGeofencing) {
+                            const storages = await FirebaseFarm.getStorages(this.setupSelectedFarmId);
+                            const geofenced = storages.filter(s => s.hasGeofence && s.geojson);
+                            if (geofenced.length > 0) {
+                                SpreadingTracker.setStorageGeofences(geofenced);
+                                MapManager.addStorageGeofences(geofenced);
+                            }
                         }
                     }
                 } catch (e) {

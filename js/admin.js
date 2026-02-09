@@ -1007,18 +1007,28 @@ const AdminPanel = {
     async loadFeatureToggles() {
         try {
             const config = await FirebaseAdmin.getGlobalFeatures();
-            const toggle = document.getElementById('global-shapefiles-toggle');
-            if (toggle) toggle.checked = !!(config && config.fieldShapefiles && config.fieldShapefiles.enabled);
+            const shapefilesToggle = document.getElementById('global-shapefiles-toggle');
+            if (shapefilesToggle) shapefilesToggle.checked = !!(config && config.fieldShapefiles && config.fieldShapefiles.enabled);
+
+            const geofencingToggle = document.getElementById('global-geofencing-toggle');
+            if (geofencingToggle) geofencingToggle.checked = !!(config && config.storageGeofencing && config.storageGeofencing.enabled);
         } catch (e) {
             console.error('Failed to load feature toggles:', e);
         }
     },
 
     setupFeatureToggles() {
-        const toggle = document.getElementById('global-shapefiles-toggle');
-        if (toggle) {
-            toggle.addEventListener('change', async () => {
-                await FirebaseAdmin.updateGlobalFeatures({ fieldShapefiles: { enabled: toggle.checked } });
+        const shapefilesToggle = document.getElementById('global-shapefiles-toggle');
+        if (shapefilesToggle) {
+            shapefilesToggle.addEventListener('change', async () => {
+                await FirebaseAdmin.updateGlobalFeatures({ fieldShapefiles: { enabled: shapefilesToggle.checked } });
+            });
+        }
+
+        const geofencingToggle = document.getElementById('global-geofencing-toggle');
+        if (geofencingToggle) {
+            geofencingToggle.addEventListener('change', async () => {
+                await FirebaseAdmin.updateGlobalFeatures({ storageGeofencing: { enabled: geofencingToggle.checked } });
             });
         }
     },
@@ -1098,11 +1108,22 @@ const AdminPanel = {
             document.getElementById('farm-detail-name').textContent = farm.name || 'Unnamed Farm';
             document.getElementById('farm-detail-created').textContent = farm.createdAt ? new Date(farm.createdAt).toLocaleDateString() : '-';
 
+            // Check if global geofencing is enabled
+            const globalFeatures = await FirebaseAdmin.getGlobalFeatures();
+            const globalGeofencingEnabled = !!(globalFeatures && globalFeatures.storageGeofencing && globalFeatures.storageGeofencing.enabled);
+
             // Load farm features (geofencing toggle)
             const features = await FirebaseFarm.getFarmFeatures(farmId);
             const geofencingToggle = document.getElementById('farm-detail-geofencing-toggle');
-            if (geofencingToggle) {
-                geofencingToggle.checked = !!(features && features.storageGeofencing);
+            const geofencingSection = geofencingToggle ? geofencingToggle.closest('.toggle-section') : null;
+
+            if (geofencingSection) {
+                if (globalGeofencingEnabled) {
+                    geofencingSection.classList.remove('hidden');
+                    geofencingToggle.checked = !!(features && features.storageGeofencing);
+                } else {
+                    geofencingSection.classList.add('hidden');
+                }
             }
 
             // Load all farm data in parallel
