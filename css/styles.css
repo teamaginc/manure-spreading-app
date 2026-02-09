@@ -1150,6 +1150,7 @@ input[type="number"] {
 
 .records-table-container {
     flex: 1;
+    min-height: 0; /* Required for flex item to shrink below content size */
     overflow-y: auto;
 }
 
