@@ -90,9 +90,9 @@ const PastRecords = {
             const headerHeight = header ? header.offsetHeight : 0;
             const availableHeight = screen.offsetHeight - headerHeight - 24; // 24 for handle height
 
-            // Constrain height: min 120px, max 70% of available space
-            const minHeight = 120;
-            const maxHeight = availableHeight * 0.7;
+            // Constrain height: min 100px, max 80% of available space
+            const minHeight = 100;
+            const maxHeight = availableHeight * 0.8;
             const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
 
             panel.style.height = clampedHeight + 'px';

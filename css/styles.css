@@ -1082,7 +1082,6 @@ input[type="number"] {
     flex: 1;
     width: 100%;
     min-height: 80px;
-    max-height: 45%;
     z-index: 1;
 }
 
@@ -1122,8 +1121,8 @@ input[type="number"] {
     display: flex;
     flex-direction: column;
     background: var(--bg-card);
-    min-height: 140px;
-    max-height: 70%;
+    min-height: 100px;
+    max-height: 80%;
     height: 40%; /* Default height */
     flex-shrink: 0;
     overflow: hidden; /* Ensure content is clipped when resizing */
