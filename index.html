@@ -287,6 +287,20 @@
                 <button type="submit" class="btn btn-primary btn-large">Save Settings</button>
             </form>
             <div id="settings-message" class="success-message hidden"></div>
+
+            <!-- Experimental Features (user opt-in) -->
+            <div id="user-experimental-features" class="hidden" style="margin-top:24px;padding-top:24px;border-top:1px solid var(--border-color);">
+                <h3 style="margin-bottom:12px;color:#7b1fa2;">Experimental Features</h3>
+                <div class="toggle-section">
+                    <label class="toggle-label">
+                        <span>Auto-Start on Charging</span>
+                        <input type="checkbox" id="user-autostart-charging-toggle">
+                        <span class="toggle-switch"></span>
+                    </label>
+                    <p class="toggle-description">Automatically start spreading when your phone begins charging and stop when unplugged. Must be on the Setup screen for this to work.</p>
+                </div>
+            </div>
+
             <button id="logout-btn" class="btn btn-danger btn-large">Logout</button>
         </div>
     </div>
@@ -696,6 +710,15 @@
                     <span class="toggle-switch"></span>
                 </label>
                 <p class="toggle-description">When enabled, farm owners can draw geofences around manure storages. During spreading, entering a storage geofence automatically increments the load counter.</p>
+            </div>
+
+            <div class="toggle-section">
+                <label class="toggle-label">
+                    <span>Auto-Start on Charging</span>
+                    <input type="checkbox" id="global-autostart-charging-toggle">
+                    <span class="toggle-switch"></span>
+                </label>
+                <p class="toggle-description">When enabled, spreading automatically starts when the phone begins charging and stops when unplugged. Useful for setups where charging is wired to spreading equipment.</p>
             </div>
         </div>
     </div>

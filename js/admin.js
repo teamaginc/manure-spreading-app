@@ -1012,6 +1012,9 @@ const AdminPanel = {
 
             const geofencingToggle = document.getElementById('global-geofencing-toggle');
             if (geofencingToggle) geofencingToggle.checked = !!(config && config.storageGeofencing && config.storageGeofencing.enabled);
+
+            const autostartChargingToggle = document.getElementById('global-autostart-charging-toggle');
+            if (autostartChargingToggle) autostartChargingToggle.checked = !!(config && config.autostartCharging && config.autostartCharging.enabled);
         } catch (e) {
             console.error('Failed to load feature toggles:', e);
         }
@@ -1029,6 +1032,13 @@ const AdminPanel = {
         if (geofencingToggle) {
             geofencingToggle.addEventListener('change', async () => {
                 await FirebaseAdmin.updateGlobalFeatures({ storageGeofencing: { enabled: geofencingToggle.checked } });
+            });
+        }
+
+        const autostartChargingToggle = document.getElementById('global-autostart-charging-toggle');
+        if (autostartChargingToggle) {
+            autostartChargingToggle.addEventListener('change', async () => {
+                await FirebaseAdmin.updateGlobalFeatures({ autostartCharging: { enabled: autostartChargingToggle.checked } });
             });
         }
     },

@@ -168,6 +168,8 @@ const App = {
                 }
                 // Check for announcements
                 this.checkAndShowAnnouncements();
+                // Check experimental features availability
+                this.checkExperimentalFeatures();
             } else {
                 console.log('User logged out');
                 document.body.classList.remove('has-sidebar');
@@ -695,6 +697,98 @@ const App = {
                 this.showScreen('login-screen');
             }
         });
+
+        // Auto-start on charging toggle
+        const autostartToggle = document.getElementById('user-autostart-charging-toggle');
+        if (autostartToggle) {
+            // Load saved preference
+            autostartToggle.checked = localStorage.getItem('autostartOnCharging') === 'true';
+
+            autostartToggle.addEventListener('change', () => {
+                localStorage.setItem('autostartOnCharging', autostartToggle.checked);
+                if (autostartToggle.checked) {
+                    this.setupChargingDetection();
+                }
+            });
+        }
+    },
+
+    // Check and show experimental features in user settings
+    async checkExperimentalFeatures() {
+        const experimentalSection = document.getElementById('user-experimental-features');
+        if (!experimentalSection) return;
+
+        try {
+            if (window.FirebaseAdmin) {
+                const globalFeatures = await FirebaseAdmin.getGlobalFeatures();
+                const autostartEnabled = !!(globalFeatures && globalFeatures.autostartCharging && globalFeatures.autostartCharging.enabled);
+
+                if (autostartEnabled) {
+                    experimentalSection.classList.remove('hidden');
+                    // Set up charging detection if user has it enabled
+                    if (localStorage.getItem('autostartOnCharging') === 'true') {
+                        this.setupChargingDetection();
+                    }
+                } else {
+                    experimentalSection.classList.add('hidden');
+                }
+            }
+        } catch (e) {
+            console.error('Error checking experimental features:', e);
+        }
+    },
+
+    // Battery API charging detection
+    batteryManager: null,
+    chargingHandler: null,
+
+    async setupChargingDetection() {
+        if (!('getBattery' in navigator)) {
+            console.warn('Battery API not supported');
+            return;
+        }
+
+        try {
+            this.batteryManager = await navigator.getBattery();
+
+            // Remove old handler if exists
+            if (this.chargingHandler) {
+                this.batteryManager.removeEventListener('chargingchange', this.chargingHandler);
+            }
+
+            this.chargingHandler = () => this.onChargingChange();
+            this.batteryManager.addEventListener('chargingchange', this.chargingHandler);
+
+            console.log('Charging detection enabled, current charging state:', this.batteryManager.charging);
+        } catch (e) {
+            console.error('Failed to set up charging detection:', e);
+        }
+    },
+
+    async onChargingChange() {
+        if (!this.batteryManager) return;
+
+        const isCharging = this.batteryManager.charging;
+        const autostartEnabled = localStorage.getItem('autostartOnCharging') === 'true';
+
+        if (!autostartEnabled) return;
+
+        // Only auto-start/stop if on setup screen
+        if (this.currentScreen === 'setup-screen' && isCharging) {
+            console.log('Charging started - auto-starting spreading');
+            // Simulate clicking the start button
+            const startBtn = document.getElementById('start-spreading');
+            if (startBtn && !startBtn.disabled) {
+                startBtn.click();
+            }
+        } else if (this.currentScreen === 'map-screen' && !isCharging) {
+            console.log('Charging stopped - auto-stopping spreading');
+            // Simulate clicking the stop button
+            const stopBtn = document.getElementById('stop-spreading');
+            if (stopBtn) {
+                stopBtn.click();
+            }
+        }
     },
 
     loadSettings() {
