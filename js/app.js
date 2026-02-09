@@ -409,8 +409,6 @@ const App = {
                 this.loadCount++;
             }
 
-            const tractorColor = 'green';
-            const manureColor = 'brown';
             const targetRate = document.getElementById('target-rate').value;
             const spreadWidth = document.getElementById('spread-width').value || 50;
 
@@ -449,8 +447,6 @@ const App = {
             }
 
             const result = await SpreadingTracker.startTracking(
-                tractorColor,
-                manureColor,
                 targetRate ? parseFloat(targetRate) : null,
                 parseFloat(spreadWidth),
                 this.selectedPriorSession?.id || null
@@ -587,8 +583,7 @@ const App = {
                     <div class="session-item" data-log-id="${log.id}">
                         <div class="session-date">${date} at ${time}</div>
                         <div class="session-details">
-                            ${log.tractorColor} tractor, ${log.manureColor} manure
-                            (${pointCount} GPS points)
+                            ${pointCount} GPS points
                         </div>
                         <div class="session-settings">
                             Rate: ${rateInfo} | Width: ${widthInfo} | Duration: ${duration}

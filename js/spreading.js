@@ -4,8 +4,6 @@ const SpreadingTracker = {
     isTracking: false,
     watchId: null,
     currentLog: null,
-    tractorColor: 'red',
-    manureColor: 'brown',
     targetRate: null,
     spreadWidth: 50,
     lastPosition: null,
@@ -34,14 +32,12 @@ const SpreadingTracker = {
     geofenceCooldownMs: 30000, // 30 second cooldown to prevent GPS jitter double-counting
     lastGeofenceEntryTime: 0,
 
-    async startTracking(tractorColor, manureColor, targetRate, spreadWidth, priorSessionId = null) {
+    async startTracking(targetRate, spreadWidth, priorSessionId = null) {
         if (this.isTracking) {
             console.warn('Already tracking');
             return;
         }
 
-        this.tractorColor = tractorColor;
-        this.manureColor = manureColor;
         this.targetRate = targetRate || null;
         this.spreadWidth = spreadWidth || 50;
         this.priorSessionId = priorSessionId;
@@ -56,16 +52,14 @@ const SpreadingTracker = {
             id: StorageDB.generateId(),
             timestamp: new Date().toISOString(),
             endTime: null,
-            tractorColor: tractorColor,
-            manureColor: manureColor,
             targetRate: this.targetRate,
             spreadWidth: this.spreadWidth,
             priorSessionId: priorSessionId,
             path: []
         };
 
-        // Initialize map path with width
-        MapManager.startPath(manureColor, this.spreadWidth);
+        // Initialize map path with width (brown manure color)
+        MapManager.startPath('#8B4513', this.spreadWidth);
 
         // Load field boundaries if feature enabled
         if (typeof FieldDisplay !== 'undefined') {
@@ -149,7 +143,7 @@ const SpreadingTracker = {
         }
 
         // Update tractor position on map
-        MapManager.setTractorPosition(latitude, longitude, this.tractorColor);
+        MapManager.setTractorPosition(latitude, longitude);
 
         // On first valid position, check if we're already inside a storage geofence
         if (!this.lastPosition && this.geofenceEnabled) {
@@ -542,8 +536,6 @@ const SpreadingTracker = {
             id: StorageDB.generateId(),
             timestamp: new Date().toISOString(),
             endTime: null,
-            tractorColor: this.tractorColor,
-            manureColor: this.manureColor,
             targetRate: this.targetRate,
             spreadWidth: this.spreadWidth,
             fieldId: newField.id,
@@ -559,7 +551,7 @@ const SpreadingTracker = {
 
         // Reset map path for new field
         MapManager.clearPath();
-        MapManager.startPath(this.manureColor, this.spreadWidth);
+        MapManager.startPath('#8B4513', this.spreadWidth);
     },
 
     handleFieldChangeRejected() {

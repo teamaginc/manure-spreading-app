@@ -85,8 +85,7 @@ const ExportManager = {
                         <div class="log-item">
                             <span class="log-time">${time}</span>
                             <span class="log-details">
-                                ${log.tractorColor} tractor, ${log.manureColor} manure
-                                (${pointCount} GPS points)
+                                ${pointCount} GPS points
                             </span>
                             <span class="log-settings">
                                 Rate: ${rateInfo} | Width: ${widthInfo}
@@ -150,7 +149,7 @@ const ExportManager = {
         }
 
         // Header row
-        let csv = 'Date,Start Time,End Time,Duration,Tractor Color,Manure Color,Target Rate (gal/ac),Spread Width (ft),GPS Points,Path Coordinates\n';
+        let csv = 'Date,Start Time,End Time,Duration,Target Rate (gal/ac),Spread Width (ft),GPS Points,Path Coordinates\n';
 
         logs.forEach(log => {
             const date = this.formatDateShort(log.timestamp);
@@ -166,7 +165,7 @@ const ExportManager = {
                 ? log.path.map(p => `${p.lat};${p.lng}`).join('|')
                 : '';
 
-            csv += `"${date}","${startTime}","${endTime}","${duration}","${log.tractorColor}","${log.manureColor}","${targetRate}","${spreadWidth}",${pointCount},"${pathStr}"\n`;
+            csv += `"${date}","${startTime}","${endTime}","${duration}","${targetRate}","${spreadWidth}",${pointCount},"${pathStr}"\n`;
         });
 
         // Append weather data if available
@@ -245,8 +244,6 @@ const ExportManager = {
         <description>
             Time: ${timeStr}
             Duration: ${duration}
-            Tractor: ${log.tractorColor}
-            Manure: ${log.manureColor}
             Target Rate: ${log.targetRate || 'N/A'} gal/ac
             Width: ${log.spreadWidth || 50} ft
             GPS Points: ${log.path.length}
